@@ -1,6 +1,6 @@
-const CACHE_NAME="bwe-alpha-034-v3";
+const CACHE_NAME="bwe-alpha-034-v4";
 const CORE=[
- "./","./index.html","./style.css",
+ "./","./index.html","./style.css","./ios-safe.css",
  "./core-00.js","./core-01.js","./core-02.js","./core-03.js","./core-04.js","./core-05.js","./core-06.js","./core-07.js",
  "./core-08.js","./core-09.js","./core-10.js","./core-11.js","./core-12.js","./core-13.js","./core-14.js","./core-15.js",
  "./manifest.webmanifest","./apple-touch-icon.png","./icon-192.png","./icon-512.png","./icon-maskable-512.png"
