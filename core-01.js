@@ -1,6 +1,7 @@
 'use strict';
-const VERSION='0.38.0';
-const SAVE_KEY='bwe-core-alpha-038';
+const VERSION='0.39.0';
+const SAVE_KEY='bwe-core-alpha-039';
+const ALPHA038_SAVE_KEY='bwe-core-alpha-038';
 const ALPHA035_SAVE_KEY='bwe-core-alpha-035';
 const ALPHA034_SAVE_KEY='bwe-core-alpha-034';
 const ALPHA033_SAVE_KEY='bwe-core-alpha-033';
@@ -78,7 +79,7 @@ const MAPS=[
  {id:'forest',name:'魂木森林',cp:771,mod:0.6,gearTier:3,petTier:3,threatCap:5,levels:[18,30],monsters:['毒牙蛛','苔甲兽','幽光鹿'],boss:'千年树灵',pet:'树灵幼芽'},
  {id:'shore',name:'霜蚀海岸',cp:1695,mod:1.0,gearTier:4,petTier:4,threatCap:6,levels:[31,47],monsters:['冰壳蟹','冻原狼人','霜鳍鱼人'],boss:'极寒海兽',pet:'霜鳍幼兽'},
  {id:'ruins',name:'失落王城',cp:3795,mod:1.55,gearTier:5,petTier:5,threatCap:8,levels:[48,68],monsters:['王城亡魂','黑甲守卫','诅咒法师'],boss:'不灭王魂',pet:'王魂侍从'},
- {id:'abyss',name:'星渊尽头',cp:26000,mod:2.2,gearTier:6,petTier:6,threatCap:Infinity,levels:[69,100],monsters:['虚空猎犬','星蚀魔像','深渊观测者'],boss:'终焉星龙',pet:'星核幼龙'}
+ {id:'abyss',name:'星渊尽头',cp:9000,mod:2.2,gearTier:6,petTier:6,threatCap:Infinity,levels:[58,100],monsters:['虚空猎犬','星蚀魔像','深渊观测者'],boss:'终焉星龙',pet:'星核幼龙'}
 ];
 const MONSTER_TITLES=[
  {name:'虚弱的',w:18,atkMul:.8,hpMul:.8,defMul:1,xp:.5,gold:.5,drop:.7},

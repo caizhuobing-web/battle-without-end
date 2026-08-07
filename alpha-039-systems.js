@@ -1,4 +1,4 @@
-/* Alpha 0.38 — shop, build depth, pet evolution and endless abyss. */
+/* Alpha 0.39 — consolidated market, builds, pet evolution UI and endless progression. */
 (()=>{
  'use strict';
  if(typeof state==='undefined'||typeof render!=='function')return;
@@ -10,31 +10,7 @@
   auto:'自动判断',boss:'仅Boss',normal:'仅普通怪',targetLow:'目标生命≤40%',selfLow:'自身生命≤60%',shield:'仅目标有护盾'
  };
  const BOSS_PET_BY_MAP=Object.fromEntries(MAPS.map(m=>[m.id,m.pet]));
- const NORMAL_PET_MODS={
-  '月角幼兔':{atk:1.08,speed:true},'青芽史莱姆':{hp:1.12},'风羽幼鹰':{atk:1.12},'岩鳞幼蜥':{def:1.13},
-  '荧角幼鹿':{magic:1.12},'苔甲幼兽':{hp:1.08,def:1.08},'冰壳幼蟹':{def:1.15},'霜鳍幼鱼':{magic:1.13},
-  '王城幼魂':{magic:1.10,atk:1.06},'黑甲幼侍':{hp:1.08,def:1.10},'虚空幼犬':{atk:1.15},'星蚀幼核':{magic:1.15}
- };
- const GROUP_BRANCHES={
-  meadow:{three:['月影猎手','银鬃守卫'],six:['血月猎王','苍月共生']},
-  hill:{three:['烈风尖牙','金鬃壁垒'],six:['风暴狮王','群山共生']},
-  forest:{three:['荆棘猎枝','古木守心'],six:['噬魂古树','生命共鸣']},
-  shore:{three:['霜刃猎手','冰甲守卫'],six:['极寒霸主','潮汐共生']},
-  ruins:{three:['魂刃侍从','王盾守誓'],six:['不灭猎王','王魂共鸣']},
-  abyss:{three:['星渊猎形','虚界守形'],six:['终焉猎王','星核共生']}
- };
- const ABYSS_VARIANTS=[
-  {id:'hunger',name:'噬法',desc:'持续吞噬法力。'},
-  {id:'regen',name:'再生',desc:'每4回合恢复生命。'},
-  {id:'mirror',name:'镜界',desc:'每4回合生成护盾。'},
-  {id:'frenzy',name:'狂星',desc:'半血后攻击与速度大幅提高。'}
- ];
-
- function petGroup(name){
-  const boss=MAPS.find(m=>m.pet===name);if(boss)return boss.id;
-  return Object.keys(BOSS_PET_BY_MAP).find(id=>BOSS_PET_BY_MAP[id]===name)||'meadow';
- }
- function ensureAlpha038State(){
+ function ensureAlpha039State(){
   state.version=VERSION;
   state.shop={gearBuys:0,petTraining:0,inventoryUpgrades:0,petUpgrades:0,...(state.shop||{})};
   state.shop.stock=Array.isArray(state.shop.stock)?state.shop.stock:[];
@@ -47,6 +23,9 @@
   state.abyssDepth=Math.max(1,Math.round(Number(state.abyssDepth||1)));
   state.abyssHighest=Math.max(state.abyssDepth,Math.round(Number(state.abyssHighest||1)));
   state.autoFuseTargetId=state.pets?.some(p=>p.id===state.autoFuseTargetId)?state.autoFuseTargetId:null;
+  state.autoFuseActivePet=!!state.autoFuseActivePet;
+  delete state.soul;
+  (state.pets||[]).forEach(p=>{p.baseSpecies=petBaseSpecies(p);migratePetFusionInvestment(p)});
   if(state.starterProfessionPending||(state.started&&state.firstBossMilestoneClaimed&&state.style==='farmer'&&!STARTER_JOBS.some(id=>state.unlockedClasses.includes(id)))){
    const id=STARTER_JOBS[rnd(0,STARTER_JOBS.length-1)];
    state.starterProfessionPending=false;state.running=true;
@@ -55,7 +34,7 @@
    syncSkills();log(`旧版待选职业印记已随机转化为${STYLES[id].icon}${STYLES[id].name}。`,'important','important');
   }
   if(!Object.keys(state.petCodex).length){
-   (state.pets||[]).forEach(p=>state.petCodex[p.name]=(state.petCodex[p.name]||0)+1);
+   (state.pets||[]).forEach(p=>{const species=petBaseSpecies(p);state.petCodex[species]=(state.petCodex[species]||0)+1});
   }
  }
 
@@ -170,29 +149,17 @@
   return html+`<div class="card" style="margin-top:10px"><h3>主动技能使用条件</h3>${rules||'<div class="muted">装备主动技能后可设置。</div>'}</div>`+buildPanel();
  };
 
- // ----- Alpha 0.37: ordinary hatchlings, codex and branch evolution -----
+ // ----- Alpha 0.39: complete lineage inheritance and species-specific evolution -----
  Object.entries(BOSS_PET_BY_MAP).forEach(([group,name])=>{
   if(!PET_SPECIES[name])PET_SPECIES[name]={archetype:'首领幼体',preferred:['Attack','Defense','Magic','Balance'],focus:'按类型培养',desc:`由${MAPS.find(m=>m.id===group)?.name||'未知区域'}的区域Boss掉落。`,trait:'首领血脉',traitDesc:'拥有稳定的类型成长。',skill:'血脉协击',skillDesc:'依靠宠物类型技能参与自动战斗。'};
  });
- Object.assign(PET_SPECIES_ICONS,{'月角幼兔':'🐇','青芽史莱姆':'🟢','风羽幼鹰':'🦅','岩鳞幼蜥':'🦎','荧角幼鹿':'🦌','苔甲幼兽':'🦬','冰壳幼蟹':'🦀','霜鳍幼鱼':'🐟','王城幼魂':'👻','黑甲幼侍':'🛡️','虚空幼犬':'🐕','星蚀幼核':'☄️'});
- const petStatsBefore038=petStats;
- petStats=function(p){
-  const s=petStatsBefore038(p),mods=NORMAL_PET_MODS[p?.name]||{};if(mods.hp)s.maxHp=Math.round(s.maxHp*mods.hp);if(mods.atk)s.atk=Math.round(s.atk*mods.atk);if(mods.def)s.def=Math.round(s.def*mods.def);if(mods.magic)s.magic=Math.round(s.magic*mods.magic);
-  if(p?.evolutionBranches?.stage3==='assault'){s.atk=Math.round(s.atk*1.18);s.magic=Math.round(s.magic*1.18)}
-  if(p?.evolutionBranches?.stage3==='guardian'){s.maxHp=Math.round(s.maxHp*1.18);s.def=Math.round(s.def*1.18)}
-  if(p?.evolutionBranches?.stage6==='apex'){s.atk=Math.round(s.atk*1.15);s.magic=Math.round(s.magic*1.15)}
-  if(p?.evolutionBranches?.stage6==='harmony'){s.maxHp=Math.round(s.maxHp*1.10);s.atk=Math.round(s.atk*1.10);s.def=Math.round(s.def*1.10);s.magic=Math.round(s.magic*1.10)}return s;
- };
- const petDamageBefore038=petSpeciesDamageMult;
- petSpeciesDamageMult=function(p,e){let v=petDamageBefore038(p,e);if(p?.evolutionBranches?.stage6==='apex'&&e?.boss)v*=1.25;return v};
- const playerPetMultBefore038=playerDamageTakenPetMult;
- playerDamageTakenPetMult=function(p){let v=playerPetMultBefore038(p);if(p?.evolutionBranches?.stage6==='harmony'&&petAlive(p))v*=.95;return v};
  const receivePetBefore038=receivePet;
- receivePet=function(p){state.petCodex[p.name]=(state.petCodex[p.name]||0)+1;return receivePetBefore038(p)};
- function evolutionNames(p){return GROUP_BRANCHES[petGroup(p.name)]||GROUP_BRANCHES.meadow}
- function evolutionRouteText(p){const n=evolutionNames(p),b=p.evolutionBranches||{},parts=[];if(b.stage3)parts.push(n.three[b.stage3==='assault'?0:1]);if(b.stage6)parts.push(n.six[b.stage6==='apex'?0:1]);return parts.length?parts.join(' → '):'尚未选择分支'}
- const petEvolutionTextBefore038=petEvolutionText;
- petEvolutionText=function(p){return `${petEvolutionTextBefore038(p)}｜分支：${evolutionRouteText(p)}`};
+ function selectedFusionTarget(){return state.pets?.find(x=>x.id===state.autoFuseTargetId)||activePet()}
+ function autoFusionCost(target,donor,apt){return Math.round(80+(target.tier||1)*55+(donor.tier||1)*25+Math.pow(1.10,Math.max(0,(target.tier||1)-1))*35+(apt?.gap||0)*45)}
+ function tryAutoFuseDrop(p){if(!state.autoFuseActivePet||!p||p.mutant)return false;const target=selectedFusionTarget();if(!target||target.id===p.id||!samePetSpecies(target,p))return false;const apt=bestAptitudeInheritance(target,p),cost=autoFusionCost(target,p,apt);if(state.gold<cost){log(`自动融合暂未执行：完整继承培养成果需要${cost}金币，当前金币不足。`,'sys','system');return false}const beforeTier=target.tier||1,beforeLevel=target.level||1;state.gold-=cost;if(apt)migratePetAptitudes(target)[apt.stat]=apt.to;const inherited=inheritPetEvolution(target,p),ps=petStats(target);target.hp=Math.min(ps.maxHp,Math.max(1,target.hp||ps.maxHp));log(`【自动融合】${p.name}的进阶经验+${inherited.evolutionXp}、等级经验+${inherited.levelXp}${target.tier>beforeTier?`，${beforeTier}阶→${target.tier}阶`:''}${target.level>beforeLevel?`，Lv.${beforeLevel}→Lv.${target.level}`:''}，金币-${cost}。`,'loot','loot');return true}
+ receivePet=function(p){const species=petBaseSpecies(p);p.baseSpecies=species;state.petCodex[species]=(state.petCodex[species]||0)+1;if(tryAutoFuseDrop(p))return true;return receivePetBefore038(p)};
+ window.toggleAutoFuseActivePet=function(on){state.autoFuseActivePet=!!on;save();render()};
+ window.setAutoFuseTarget=function(id){state.autoFuseTargetId=id||null;save();render()};
  window.choosePetEvolution=function(id,stage,choice){
   const p=state.pets.find(x=>x.id===id);if(!p)return;p.evolutionBranches=p.evolutionBranches||{};
   if(stage===3&&(p.tier||1)>=3&&!p.evolutionBranches.stage3&&['assault','guardian'].includes(choice))p.evolutionBranches.stage3=choice;
@@ -202,44 +169,18 @@
  function petEvolutionChoices(){
   const pending=(state.pets||[]).filter(p=>((p.tier||1)>=3&&!p.evolutionBranches?.stage3)||((p.tier||1)>=6&&p.evolutionBranches?.stage3&&!p.evolutionBranches?.stage6));
   if(!pending.length)return '';
-  return `<div class="card evolution-card"><h3>分支进化待选择</h3>${pending.map(p=>{const n=evolutionNames(p),stage=!p.evolutionBranches?.stage3?3:6,opts=stage===3?n.three:n.six,values=stage===3?['assault','guardian']:['apex','harmony'];return `<div class="item"><div><b>${p.tier}阶 ${p.name}</b><div class="compact-meta">当前：${evolutionRouteText(p)}｜Tier ${stage} 分支</div></div><div class="controls"><button onclick="choosePetEvolution('${p.id}',${stage},'${values[0]}')">${opts[0]}</button><button onclick="choosePetEvolution('${p.id}',${stage},'${values[1]}')">${opts[1]}</button></div></div>`}).join('')}</div>`;
+  return `<div class="card evolution-card"><h3>分支进化待选择</h3>${pending.map(p=>{const stage=!p.evolutionBranches?.stage3?3:6,values=stage===3?['assault','guardian']:['apex','harmony'];return `<div class="item"><div><b>${p.tier}阶 ${p.name}</b><div class="compact-meta">当前：${evolutionRouteText(p)}｜Tier ${stage} 物种专属分支</div>${values.map(v=>{const d=petEvolutionChoiceDetail(p,stage,v);return `<div class="compact-meta"><b>${d.name}</b>：${d.desc}</div>`}).join('')}</div><div class="controls">${values.map(v=>{const d=petEvolutionChoiceDetail(p,stage,v);return `<button onclick="choosePetEvolution('${p.id}',${stage},'${v}')">${d.name}</button>`}).join('')}</div></div>`}).join('')}</div>`;
  }
  function petCodexPanel(){
   const all=[...new Set([...MAPS.map(m=>m.pet),...Object.values(BOSS_PET_BY_MAP)])],seen=all.filter(name=>state.petCodex[name]>0);
   return `<div class="card"><h3>宠物图鉴 ${seen.length}/${all.length}</h3><div class="codex-grid">${all.map(name=>`<span class="${state.petCodex[name]?'seen':'unseen'}">${state.petCodex[name]?`${PET_SPECIES_ICONS[name]||'🐾'}${name} ×${state.petCodex[name]}`:'？？？'}</span>`).join('')}</div></div>`;
  }
+ function autoFusePanel(){const target=selectedFusionTarget();return `<div class="notice auto-fuse-pet-panel"><b>自动融合：</b>${state.autoFuseActivePet?'已开启':'已关闭'} · 仅保护变异X；同一进化谱系的普通宠物会把自身历次融合投入、当前进阶经验与等级经验全部传给目标。进化后的宠物仍可吞噬基础形态。<div class="controls"><select onchange="setAutoFuseTarget(this.value)"><option value="">当前出战宠物</option>${state.pets.map(p=>`<option value="${p.id}" ${state.autoFuseTargetId===p.id?'selected':''}>${p.tier||1}阶 Lv.${p.level||1} ${p.name}</option>`).join('')}</select><label><input type="checkbox" ${state.autoFuseActivePet?'checked':''} onchange="toggleAutoFuseActivePet(this.checked)">开启</label></div>${target?`<div class="compact-meta">当前目标：${target.tier||1}阶 Lv.${target.level||1} ${target.name}</div>`:''}</div>`}
+ function petGuidePanel(){return `${helpBlock('四种宠物类型详解',Object.values(PET_TYPES).map(t=>`<b>${t.name}｜${t.role}</b><br>${t.desc}<br>优势：${t.strength}<br>短板：${t.weakness}`).join('<br><br>'))}${helpBlock('六种宠物进化路线',MAPS.map(m=>{const sample={name:m.pet,evolutionBranches:{}};const g=PET_EVOLUTION_ROUTES[m.id];return `<b>${m.pet}｜${PET_SPECIES[m.pet].archetype}</b><br>3阶：${Object.values(g.three).map(x=>`【${x.name}】${x.desc}`).join(' / ')}<br>6阶：${Object.values(g.six).map(x=>`【${x.name}】${x.desc}`).join(' / ')}`}).join('<br><br>'))}`}
  const renderPetsBefore038=renderPets;
- renderPets=function(){return petEvolutionChoices()+renderPetsBefore038()+petCodexPanel()};
+ renderPets=function(){return petEvolutionChoices()+autoFusePanel()+petGuidePanel()+renderPetsBefore038()+petCodexPanel()};
 
- // ----- Alpha 0.38: endless abyss and world tiers -----
- const worldScaleBefore038=worldCombatScale;
- worldCombatScale=function(id=state.mapId){
-  const w=worldScaleBefore038(id),r=Math.max(0,Number(state.rebirths||0)),hp=1+.22*r,atk=1+.14*r,def=1+.10*r;
-  return{...w,hp:w.hp*hp,atk:w.atk*atk,def:w.def*def,cpMult:w.cpMult*Math.sqrt(hp*atk*Math.sqrt(def)),reward:w.reward*(1+.10*r),worldTier:r};
- };
- const dangerDropBefore038=dangerDropProfile;
- dangerDropProfile=function(id=state.mapId){
-  const d=dangerDropBefore038(id);if(id!=='abyss')return d;const depth=Math.max(1,state.abyssDepth||1),n=depth-1;
-  return{...d,gearDrop:d.gearDrop*(1+Math.min(1.5,n*.018)),petDrop:d.petDrop*(1+Math.min(.8,n*.012)),mythic:d.mythic*(1+Math.min(3,n*.025)),mutation:d.mutation*(1+Math.min(2,n*.018)),identity:d.identity*(1+Math.min(.8,n*.01))};
- };
- const makeEnemyBefore038=makeEnemy;
- makeEnemy=function(forceBoss=false){
-  const e=makeEnemyBefore038(forceBoss);e.gold=Number(e.gold||1)*1.40;
-  if(e.mapId==='abyss'){
-   const depth=Math.max(1,state.abyssDepth||1),n=depth-1,hp=1+.16*n+.012*n*n,atk=1+.10*n+.006*n*n,def=1+.06*n+.003*n*n,speed=1+Math.min(.75,n*.006);
-   e.abyssDepth=depth;e.maxHp=Math.round(e.maxHp*hp);e.hp=e.maxHp;e.huntStartHp=e.maxHp;e.atk=Math.round(e.atk*atk);e.def=Math.round(e.def*def);e.speed=Math.round(e.speed*speed);e.cp=Math.round(e.cp*Math.sqrt(hp*atk*Math.sqrt(def)));e.rewardMult=Number(e.rewardMult||1)*(1+n*.05);
-   if(e.boss){const cycle=Math.max(1,Math.floor(depth/5)),variant=ABYSS_VARIANTS[(cycle-1)%ABYSS_VARIANTS.length];e.abyssVariant=variant.id;e.name=`第${depth}层·${variant.name}${MAPS[5].boss}`;e.variantName=variant.name;e.variantDesc=variant.desc;}
-  }return e;
- };
- const enemyAttackBefore038=enemyAttack;
- enemyAttack=function(){
-  const e=state.enemy;if(e?.boss&&e.mapId==='abyss'){
-   const next=(e.round||0)+1;
-   if(e.abyssVariant==='regen'&&next%4===0){const h=Math.max(1,Math.round(e.maxHp*.055));e.hp=Math.min(e.maxHp,e.hp+h);log(`${e.name}发动深层再生，恢复${h}生命。`,'lose','defense')}
-   if(e.abyssVariant==='mirror'&&next%4===0){e.shield=1;log(`${e.name}展开星渊镜界，下一次受到的伤害降低。`,'lose','defense')}
-   if(e.abyssVariant==='frenzy'&&!e.abyssFrenzied&&e.hp/e.maxHp<=.50){e.abyssFrenzied=true;e.atk=Math.round(e.atk*1.35);e.speed=Math.round(e.speed*1.20);log(`${e.name}进入狂星状态。`,'lose','important')}
-  }return enemyAttackBefore038();
- };
+ // ----- Alpha 0.39: endless abyss progression -----
  const winBattleBefore038=winBattle;
  winBattle=function(){
   const defeated=state.enemy?{...state.enemy}:null,mapId=state.mapId,wasAbyss=mapId==='abyss',depth=state.abyssDepth||1,retryFiller=wasAbyss&&!state.enemy?.boss&&!!state.bossProgress?.abyss?.active;
@@ -258,16 +199,16 @@
  renderMaps=function(){
   let html=renderMapsBefore038();html=html.replace('危险度只影响掉落，不改变怪物战斗属性；打不过只会不断战败。','危险度真实强化敌人与收益：击败Boss自动升一级，任意战斗失败自动降一级。');
   const d=dangerDropProfile('abyss'),cycle=bossCycleConfig('abyss');
-  return `<div class="card abyss-card"><h3>Alpha 0.38 · 真正的无尽星渊</h3><div class="stat-table"><div class="stat"><b>${state.abyssDepth}</b>当前层</div><div class="stat"><b>${state.abyssHighest}</b>最高层</div><div class="stat"><b>W${state.rebirths||0}</b>世界阶级</div><div class="stat"><b>${cycle.period}</b>Boss周期</div></div><div class="compact-meta">星渊Boss同样按危险度周期出现并轮换机制；普通层失败退回最近检查点，Boss保留三次狩猎机会。深度持续提高装备、神话和变异X概率，不新增货币。当前星渊：装备×${d.gearDrop.toFixed(2)} · 神话×${d.mythic.toFixed(2)} · 变异X×${d.mutation.toFixed(2)}</div></div>`+html;
+  return `<div class="card abyss-card"><h3>Alpha 0.39 · 无尽星渊重平衡</h3><div class="stat-table"><div class="stat"><b>${state.abyssDepth}</b>当前层</div><div class="stat"><b>${state.abyssHighest}</b>最高层</div><div class="stat"><b>W${state.rebirths||0}</b>世界阶级</div><div class="stat"><b>${cycle.period}</b>Boss周期</div></div><div class="compact-meta">入口基准CP已降至9,000；转生敌人成长调整为生命+12%/攻击+8%/防御+6%，玩家同步获得攻击+10%/生命+6%/防御+6%/宠物+10%与金币+8%。星渊深度仍持续提高难度、收益、神话与变异X概率。</div><div class="compact-meta">当前星渊：装备×${d.gearDrop.toFixed(2)} · 神话×${d.mythic.toFixed(2)} · 变异X×${d.mutation.toFixed(2)}</div></div>`+html;
  };
 
  // Keep all visible version labels aligned with the final integrated build.
  const renderBefore038=render;
- render=function(...args){const result=renderBefore038(...args),heading=document.querySelector('.topbar h1,.start h1'),footer=document.querySelector('.footer');document.title='无尽战域：核心 Alpha 0.38';if(heading)heading.textContent='无尽战域：核心 Alpha 0.38';if(footer)footer.textContent='Alpha 0.38：定时装备商店、技能标签联动、三套构筑预设、宠物分支进化与真正的无尽星渊。';return result};
+ render=function(...args){const result=renderBefore038(...args),heading=document.querySelector('.topbar h1,.start h1'),footer=document.querySelector('.footer');document.title='无尽战域：核心 Alpha 0.39';if(heading)heading.textContent='无尽战域：核心 Alpha 0.39';if(footer)footer.textContent='Alpha 0.39：完整培养传承、六物种专属进化、三倍金币经济、星渊与转生重平衡。';return result};
 
- // New games and legacy saves receive the 0.38 state shape after all legacy patches load.
+ // New games and legacy saves receive the 0.39 state shape after all legacy patches load.
  const startGameBefore038=startGame;
- startGame=function(){const result=startGameBefore038();ensureAlpha038State();save();render(false);return result};
- ensureAlpha038State();
- try{save();render(false)}catch(err){console.warn('Alpha 0.38 final initialization skipped',err)}
+ startGame=function(){const result=startGameBefore038();ensureAlpha039State();save();render(false);return result};
+ ensureAlpha039State();
+ try{save();render(false)}catch(err){console.warn('Alpha 0.39 final initialization skipped',err)}
 })();

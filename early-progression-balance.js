@@ -67,7 +67,7 @@
  function renderStarterProfessionChoice(){
   document.getElementById('starter-profession-overlay')?.remove();
  }
- function refreshAlpha035Branding(){const title='无尽战域：核心 Alpha 0.38';document.title=title;const h=document.querySelector('.topbar h1,.start h1');if(h)h.textContent=title;const footer=document.querySelector('.footer');if(footer)footer.textContent='Alpha 0.38：定时装备商店、技能标签联动、宠物分支进化与无尽星渊。'}
+ function refreshAlpha035Branding(){const title='无尽战域：核心 Alpha 0.39';document.title=title;const h=document.querySelector('.topbar h1,.start h1');if(h)h.textContent=title;const footer=document.querySelector('.footer');if(footer)footer.textContent='Alpha 0.39：完整培养传承、六物种专属进化、三倍金币经济、星渊与转生重平衡。'}
  const renderBeforeAlpha035=render;
  render=function(...args){const out=renderBeforeAlpha035(...args);refreshAlpha035Branding();renderStarterProfessionChoice();return out};
 

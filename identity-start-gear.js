@@ -85,7 +85,7 @@
  renderStart=function(){
   const app=document.getElementById('app');if(!app)return;
   const r=RACES.human,c=STYLES.farmer,sk=SKILLS.farmer_swing;
-  app.innerHTML=`<div class="start"><h1>无尽战域：核心 Alpha 0.38</h1><p class="subtitle">从普通人开始，击败首个Boss随机获得正式职业，再逐步收集身份与构筑。</p>
+  app.innerHTML=`<div class="start"><h1>无尽战域：核心 Alpha 0.39</h1><p class="subtitle">从普通人开始，击败首个Boss随机获得正式职业，再逐步收集身份与构筑。</p>
    <label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label>
    <div class="grid2" style="margin-top:10px"><div class="choice selected"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">唯一初始种族｜特性【${r.traitName}】${r.traitDesc}</div></div>
    <div class="choice selected"><h3>${c.icon}${c.name} · ${identityRarityLabel(c)}</h3><div class="compact-meta">唯一初始职业｜${c.desc}</div><div class="compact-meta">唯一技能：【${sk.name}】｜${sk.desc}</div></div></div>
