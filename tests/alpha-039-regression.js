@@ -150,6 +150,12 @@ test("all browser scripts parse and load in index order", () => {
   createContext();
 });
 
+test("deployment smoke requirements accept the formatted runtime bundle", () => {
+  const { findMissing } = require(path.join(ROOT, "api/smoke.js"));
+  const runtimeCode = SCRIPT_FILES.map(read).join("\n");
+  assert.deepStrictEqual(findMissing(runtimeCode), []);
+});
+
 test("repository runtime has no historical shard or duplicate training files", () => {
   const names = fs.readdirSync(ROOT);
   assert(
