@@ -1,0 +1,21 @@
+name: Alpha 0.34 Syntax Check
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript chunks
+        run: |
+          for f in core-*.js; do
+            echo "Checking $f"
+            node --check "$f"
+          done
+          cat core-*.js > /tmp/all-core.js
+          node --check /tmp/all-core.js
