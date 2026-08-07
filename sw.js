@@ -1,4 +1,4 @@
-const CACHE_NAME="bwe-alpha-038-v1";
+const CACHE_NAME="bwe-alpha-038-v3";
 const CORE=[
  "./","./index.html","./style.css","./ios-safe.css","./equipment-ui.css","./equipment-live.js","./background-progress.js","./training-profile.js","./skill-cooldown-balance.js","./auto-pet-fusion.js","./identity-start-gear.js","./early-progression-balance.js","./build-system-v14.js","./jackpot-system-v14.js","./alpha-038-systems.js",
  "./core-00.js","./core-01.js","./core-02.js","./core-03.js","./core-04.js","./core-05.js","./core-06.js","./core-07.js",

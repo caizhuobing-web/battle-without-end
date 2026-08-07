@@ -105,7 +105,7 @@ const RARITIES=[
 const SLOTS=['weapon','head','armor','boots','ring','amulet'];
 const AMULET_ARCANES={
  chrono:{name:'时间折叠',minRarity:4,weight:5,desc:'所有技能基础冷却-1回合。不会让冷却低于0。',score:1.22},
- huntclock:{name:'猎手罗盘',minRarity:2,weight:13,desc:'每轮遇见区域Boss所需普通怪数量-1。与时流法则共同生效。',score:1.11},
+ huntclock:{name:'猎手罗盘',minRarity:2,weight:13,desc:'每轮遇见区域Boss所需普通怪数量-1，与时流法则共同生效；最终可降至0只，进入连续Boss战。',score:1.11},
  bloodpact:{name:'血契',minRarity:2,weight:16,desc:'玩家与出战宠物造成直接伤害时，按一定比例为玩家回复生命。',score:1.14},
  overcrit:{name:'超限视界',minRarity:3,weight:12,desc:'提高“原始暴击→实际暴击率”的转化效率，越接近100%收益越小。',score:1.13},
  resonance:{name:'咒术共鸣',minRarity:2,weight:15,desc:'所有技能触发率额外提高若干个百分点。',score:1.12},

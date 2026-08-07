@@ -10,8 +10,8 @@
   auto:'自动判断',boss:'仅Boss',normal:'仅普通怪',targetLow:'目标生命≤40%',selfLow:'自身生命≤60%',shield:'仅目标有护盾'
  };
  const NORMAL_PET_POOLS={
-  meadow:['月角幼兔','青芽史莱姆'],hill:['风羽幼鹰','岩鳞幼蜥'],forest:['荧角幼鹿','苔甲幼兽'],
-  shore:['冰壳幼蟹','霜鳍幼鱼'],ruins:['王城幼魂','黑甲幼侍'],abyss:['虚空幼犬','星蚀幼核']
+  meadow:['灰尾幼狼'],hill:['裂风幼狮'],forest:['树灵幼芽'],
+  shore:['霜鳍幼兽'],ruins:['王魂侍从'],abyss:['星核幼龙']
  };
  const NORMAL_PET_MODS={
   '月角幼兔':{atk:1.08,speed:true},'青芽史莱姆':{hp:1.12},'风羽幼鹰':{atk:1.12},'岩鳞幼蜥':{def:1.13},
@@ -208,7 +208,7 @@
   return `<div class="card evolution-card"><h3>分支进化待选择</h3>${pending.map(p=>{const n=evolutionNames(p),stage=!p.evolutionBranches?.stage3?3:6,opts=stage===3?n.three:n.six,values=stage===3?['assault','guardian']:['apex','harmony'];return `<div class="item"><div><b>${p.tier}阶 ${p.name}</b><div class="compact-meta">当前：${evolutionRouteText(p)}｜Tier ${stage} 分支</div></div><div class="controls"><button onclick="choosePetEvolution('${p.id}',${stage},'${values[0]}')">${opts[0]}</button><button onclick="choosePetEvolution('${p.id}',${stage},'${values[1]}')">${opts[1]}</button></div></div>`}).join('')}</div>`;
  }
  function petCodexPanel(){
-  const all=[...MAPS.map(m=>m.pet),...Object.values(NORMAL_PET_POOLS).flat()],seen=Object.keys(state.petCodex).filter(k=>state.petCodex[k]>0);
+  const all=[...new Set([...MAPS.map(m=>m.pet),...Object.values(NORMAL_PET_POOLS).flat()])],seen=all.filter(name=>state.petCodex[name]>0);
   return `<div class="card"><h3>宠物图鉴 ${seen.length}/${all.length}</h3><div class="codex-grid">${all.map(name=>`<span class="${state.petCodex[name]?'seen':'unseen'}">${state.petCodex[name]?`${PET_SPECIES_ICONS[name]||'🐾'}${name} ×${state.petCodex[name]}`:'？？？'}</span>`).join('')}</div></div>`;
  }
  const renderPetsBefore038=renderPets;
@@ -225,8 +225,6 @@
   const d=dangerDropBefore038(id);if(id!=='abyss')return d;const depth=Math.max(1,state.abyssDepth||1),n=depth-1;
   return{...d,gearDrop:d.gearDrop*(1+Math.min(1.5,n*.018)),petDrop:d.petDrop*(1+Math.min(.8,n*.012)),mythic:d.mythic*(1+Math.min(3,n*.025)),mutation:d.mutation*(1+Math.min(2,n*.018)),identity:d.identity*(1+Math.min(.8,n*.01))};
  };
- const shouldBossBefore038=shouldEncounterBoss;
- shouldEncounterBoss=function(id=state.mapId){if(id!=='abyss')return shouldBossBefore038(id);if(state.bossProgress?.abyss?.active)return shouldBossBefore038(id);return Math.max(1,state.abyssDepth||1)%5===0};
  const makeEnemyBefore038=makeEnemy;
  makeEnemy=function(forceBoss=false){
   const e=makeEnemyBefore038(forceBoss);e.gold=Number(e.gold||1)*1.40;
@@ -249,7 +247,7 @@
  winBattle=function(){
   const defeated=state.enemy?{...state.enemy}:null,mapId=state.mapId,wasAbyss=mapId==='abyss',depth=state.abyssDepth||1,retryFiller=wasAbyss&&!state.enemy?.boss&&!!state.bossProgress?.abyss?.active;
   const result=winBattleBefore038();
-  if(defeated&&!defeated.boss&&Math.random()<.025){const pool=NORMAL_PET_POOLS[mapId]||[];if(pool.length){const name=pool[rnd(0,pool.length-1)],pet=createPet(name,rollPetType(),Math.max(0,MAPS.findIndex(m=>m.id===mapId)));receivePet(pet);log(`【幼体掉落】${defeated.name}留下了${name}。`,'loot','loot')}}
+  if(defeated&&!defeated.boss&&Math.random()<.025){const name=NORMAL_PET_POOLS[mapId]?.[0];if(name){const pet=createPet(name,rollPetType(),Math.max(0,MAPS.findIndex(m=>m.id===mapId)));receivePet(pet);log(`【区域宠物】${defeated.name}留下了${name}。每张地图只掉落这一种宠物。`,'loot','loot')}}
   if(wasAbyss&&defeated&&!retryFiller){state.abyssDepth=depth+1;state.abyssHighest=Math.max(state.abyssHighest||1,state.abyssDepth);state.enemy=null;prepareNewBattle();if(defeated.boss)log(`【星渊突破】击败第${depth}层机制Boss，检查点推进至第${state.abyssDepth}层。`,'important','important');save()}
   return result;
  };
@@ -263,8 +261,8 @@
  const renderMapsBefore038=renderMaps;
  renderMaps=function(){
   let html=renderMapsBefore038();html=html.replace('危险度只影响掉落，不改变怪物战斗属性；打不过只会不断战败。','危险度真实强化敌人与收益：击败Boss自动升一级，任意战斗失败自动降一级。');
-  const d=dangerDropProfile('abyss'),nextBoss=Math.ceil((state.abyssDepth||1)/5)*5;
-  return `<div class="card abyss-card"><h3>Alpha 0.38 · 真正的无尽星渊</h3><div class="stat-table"><div class="stat"><b>${state.abyssDepth}</b>当前层</div><div class="stat"><b>${state.abyssHighest}</b>最高层</div><div class="stat"><b>W${state.rebirths||0}</b>世界阶级</div><div class="stat"><b>${nextBoss}</b>下个Boss层</div></div><div class="compact-meta">每5层出现轮换机制Boss；普通层失败退回最近检查点，Boss保留三次狩猎机会。深度持续提高装备、神话和变异X概率，不新增货币。当前星渊：装备×${d.gearDrop.toFixed(2)} · 神话×${d.mythic.toFixed(2)} · 变异X×${d.mutation.toFixed(2)}</div></div>`+html;
+  const d=dangerDropProfile('abyss'),cycle=bossCycleConfig('abyss');
+  return `<div class="card abyss-card"><h3>Alpha 0.38 · 真正的无尽星渊</h3><div class="stat-table"><div class="stat"><b>${state.abyssDepth}</b>当前层</div><div class="stat"><b>${state.abyssHighest}</b>最高层</div><div class="stat"><b>W${state.rebirths||0}</b>世界阶级</div><div class="stat"><b>${cycle.period}</b>Boss周期</div></div><div class="compact-meta">星渊Boss同样按危险度周期出现并轮换机制；普通层失败退回最近检查点，Boss保留三次狩猎机会。深度持续提高装备、神话和变异X概率，不新增货币。当前星渊：装备×${d.gearDrop.toFixed(2)} · 神话×${d.mythic.toFixed(2)} · 变异X×${d.mutation.toFixed(2)}</div></div>`+html;
  };
 
  // Keep all visible version labels aligned with the final integrated build.
