@@ -1,4 +1,4 @@
-name: Alpha 0.34 Syntax Check
+name: Alpha 0.38 Syntax Check
 on:
   push:
     branches: [main]
@@ -13,7 +13,7 @@ jobs:
           node-version: '22'
       - name: Check JavaScript chunks
         run: |
-          for f in core-*.js; do
+          for f in *.js api/*.js; do
             echo "Checking $f"
             node --check "$f"
           done

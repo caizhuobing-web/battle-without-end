@@ -2,7 +2,7 @@ const vm=require('vm');
 module.exports=async(req,res)=>{
  try{
   const host=req.headers.host;
-  const files=Array.from({length:16},(_,i)=>`core-${String(i).padStart(2,'0')}.js`);
+  const files=[...Array.from({length:16},(_,i)=>`core-${String(i).padStart(2,'0')}.js`),'identity-start-gear.js','skill-cooldown-balance.js','early-progression-balance.js','build-system-v14.js','jackpot-system-v14.js','auto-pet-fusion.js','equipment-live.js','background-progress.js','training-profile.js','alpha-038-systems.js'];
   const chunks=[];
   for(const f of files){
    const r=await fetch(`https://${host}/${f}`,{cache:'no-store'});
@@ -10,9 +10,9 @@ module.exports=async(req,res)=>{
    chunks.push(await r.text());
   }
   const code=chunks.join('\n');
-  new vm.Script(code,{filename:'alpha-035-all.js'});
-  const required=['const SLOT_NAMES=','const WEAPON_TYPES=','const PET_TIER_GROWTH_STEP=','const PET_TIER_INSTINCTS=','const RACES=','const STYLES=','function tryDropIdentity(','function dangerRise(','function dangerRecordLoss(','function grantFirstBossMilestone(','function registerPassiveBattleWin(','function renderLogControls(','function battleTick(','function renderCharacter('];
+  new vm.Script(code,{filename:'alpha-038-all.js'});
+  const required=['const SLOT_NAMES=','const WEAPON_TYPES=','const PET_TIER_GROWTH_STEP=','const PET_TIER_INSTINCTS=','const RACES=','const STYLES=','function tryDropIdentity(','function dangerRise(','function dangerRecordLoss(','function grantFirstBossMilestone(','function registerPassiveBattleWin(','function renderLogControls(','function battleTick(','function renderCharacter(','Alpha 0.38','SHOP_REFRESH_MS','NORMAL_PET_POOLS','ABYSS_VARIANTS'];
   const missing=required.filter(x=>!code.includes(x));
-  res.status(missing.length?500:200).json({ok:missing.length===0,version:'0.35.0',files:chunks.length,bytes:code.length,missing});
+  res.status(missing.length?500:200).json({ok:missing.length===0,version:'0.38.0',files:chunks.length,bytes:code.length,missing});
  }catch(e){res.status(500).json({ok:false,error:e.message,stack:String(e.stack||'').split('\n').slice(0,4)});}
 };

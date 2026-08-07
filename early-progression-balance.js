@@ -63,14 +63,11 @@
  // ---- Automatic danger: boss win +1, any defeat -1 ----
  renderMaps=function(){return`${helpBlock('地图与危险度说明','所有地图始终可进入。危险度全自动运行：击败区域Boss后升1级，任意战斗失败后降1级，最低T0。危险度真实提高敌人生命、攻击、防御和速度，同时提高经验、金币、装备、宠物、神话、变异X与身份掉落；地图阶级不随危险度改变。')}${MAPS.map(m=>{const effective=effectiveMapCp(m),ratio=effective/Math.max(1,cp()),risk=ratio<.75?['安全','risk-safe']:ratio<1.35?['适中','risk-even']:ratio<2.5?['高危','risk-hard']:['极危','risk-hard'],bp=state.bossProgress[m.id],metric=ensureMetric(m.id),actual=metric.battles?`${(metric.wins/metric.battles*100).toFixed(1)}%`:'—',cycle=ensureBossCycle(m.id),d=dangerDropProfile(m.id),w=worldCombatScale(m.id),selected=cycle.threatTier||0,unlocked=cycle.threatUnlocked||0;return`<div class="map-card ${state.mapId===m.id?'selected':''}"><div class="map-head"><b>${m.name} · 自动T${selected}｜历史最高T${unlocked}｜${threatCapText(m.id)}</b><span class="${risk[1]}">${risk[0]} · CP ${effective}</span></div><div class="compact-meta">Lv.${m.levels[0]}—${m.levels[1]} · 装备${m.gearTier}阶 · 宠物${m.petTier}阶 · 预计胜率${estimatedWin(m)}% · 区域总胜率${actual}</div><div class="compact-meta">${bossEncounterText(m.id)}${bp?` · Boss ${Math.round(bp.hp)}/${bp.maxHp}`:''} · 已击败${cycle.bossWins}次</div><div class="compact-meta"><b>Boss机制：</b>${bossTacticalHint(m.id)}</div>${miniDetail('危险度与掉落详情',`自动规则：Boss胜利T+1｜任意失败T−1｜最低T0<br>敌人：生命×${w.hp.toFixed(2)}｜攻击×${w.atk.toFixed(2)}｜防御×${w.def.toFixed(2)}｜速度×${w.speed.toFixed(2)}<br>战斗收益：经验/金币×${w.reward.toFixed(2)}｜装备×${d.gearDrop.toFixed(2)}｜Boss宠物×${d.petDrop.toFixed(2)}｜神话×${d.mythic.toFixed(2)}｜变异X×${d.mutation.toFixed(2)}｜身份×${d.identity.toFixed(2)}<br>怪物：${m.monsters.join('、')}｜Boss：${m.boss}`)}<div class="controls"><button ${state.mapId===m.id?'disabled':''} onclick="changeMap('${m.id}')">前往</button></div></div>`}).join('')}`};
 
- // ---- First-boss profession decision ----
+ // ---- First-boss profession result (randomized in core-11) ----
  function renderStarterProfessionChoice(){
-  document.getElementById('starter-profession-overlay')?.remove();if(!state?.starterProfessionPending)return;
-  const el=document.createElement('div');el.id='starter-profession-overlay';el.className='milestone-overlay';
-  el.innerHTML=`<div class="milestone-card"><div class="milestone-kicker">首个Boss里程碑</div><h2>选择你的第一个正式职业</h2><p>月背巨狼已经被击败，灰尾幼狼加入队伍。职业选择会立即生效，另外两个职业仍可在之后由Boss身份掉落解锁。</p><div class="milestone-choices">${['melee','ranged','magic'].map(id=>{const c=STYLES[id];return`<button onclick="claimStarterProfession('${id}')"><b>${c.icon}${c.name}</b><span>${c.desc}</span><small>技能：${c.skills.map(s=>SKILLS[s]?.name).filter(Boolean).join(' / ')}</small></button>`}).join('')}</div></div>`;
-  document.body.appendChild(el);
+  document.getElementById('starter-profession-overlay')?.remove();
  }
- function refreshAlpha035Branding(){const title='无尽战域：核心 Alpha 0.35';document.title=title;const h=document.querySelector('.topbar h1,.start h1');if(h)h.textContent=title;const footer=document.querySelector('.footer');if(footer)footer.textContent='Alpha 0.35：自动升降危险度、首个Boss职业里程碑、三次Boss狩猎、战前机制预告与自动融合保护。'}
+ function refreshAlpha035Branding(){const title='无尽战域：核心 Alpha 0.38';document.title=title;const h=document.querySelector('.topbar h1,.start h1');if(h)h.textContent=title;const footer=document.querySelector('.footer');if(footer)footer.textContent='Alpha 0.38：定时装备商店、技能标签联动、宠物分支进化与无尽星渊。'}
  const renderBeforeAlpha035=render;
  render=function(...args){const out=renderBeforeAlpha035(...args);refreshAlpha035Branding();renderStarterProfessionChoice();return out};
 

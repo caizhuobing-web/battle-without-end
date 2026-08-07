@@ -1,4 +1,4 @@
-/* Alpha 0.35 - protected auto fusion for same-species ordinary pets. */
+/* Alpha 0.38 - auto fusion protects mutant X only. */
 (()=>{
  'use strict';
  if(typeof receivePet!=='function'||typeof renderPets!=='function')return;
@@ -13,23 +13,17 @@
  function directFusionCost(target,donor,apt){
   return Math.round(80+(target.tier||1)*55+(donor.tier||1)*25+Math.pow(1.10,Math.max(0,(target.tier||1)-1))*35+(apt?.gap||0)*45);
  }
- function sameSpeciesTarget(p){
-  const target=typeof activePet==='function'?activePet():null;
-  return target&&p&&target.id!==p.id&&target.name===p.name?target:null;
+ function selectedFusionTarget(){
+  const selected=state?.pets?.find(x=>x.id===state.autoFuseTargetId);
+  return selected||((typeof activePet==='function')?activePet():null);
  }
- function protectionReason(target,donor){
-  if(donor.type!==target.type)return '类型不同';
-  if(petHasHighAptitude(donor,'S'))return '存在S以上资质';
-  const ta=migratePetAptitudes(target),da=migratePetAptitudes(donor),higher=Object.keys(da).filter(k=>gradeIndex(da[k])>gradeIndex(ta[k])).length;
-  if(higher>=2)return '两项以上资质更高';
-  if(petOverallScore(donor)>petOverallScore(target))return '综合资质更高';
-  if(petCombatPower(donor)>petCombatPower(target))return '当前战力更高';
-  return '';
+ function sameSpeciesTarget(p){
+  const target=selectedFusionTarget();
+  return target&&p&&target.id!==p.id&&target.name===p.name?target:null;
  }
  function tryAutoFuseDrop(p){
   if(!ensureSetting()||!p||p.mutant)return false;
   const target=sameSpeciesTarget(p);if(!target)return false;
-  const protectedReason=protectionReason(target,p);if(protectedReason){log(`【自动融合保护】${p.name}因${protectedReason}未被消耗，交回常规宠物筛选处理。`,'important','important');return false}
   const apt=bestAptitudeInheritance(target,p),evo=petEvolutionValue(p);
   if(!(evo>0||apt))return false;
   const cost=directFusionCost(target,p,apt);
@@ -64,11 +58,16 @@
   const status=document.getElementById('auto-fuse-pet-status');
   if(status)status.textContent=state.autoFuseActivePet?'已开启':'已关闭';
  };
+ window.setAutoFuseTarget=function(id){
+  state.autoFuseTargetId=id||null;
+  try{save()}catch(_){}
+  render();
+ };
 
  function autoFusePanel(){
   ensureSetting();
-  const p=typeof activePet==='function'?activePet():null;
-  return `<div class="notice auto-fuse-pet-panel" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>自动融合给出战宠物</b> · <span id="auto-fuse-pet-status">${state.autoFuseActivePet?'已开启':'已关闭'}</span><div class="compact-meta">${p?`当前目标：${p.tier||1}阶 ${p.name}｜`:''}仅自动消耗同物种、同类型且明确较弱的普通宠物。变异X、单项S以上、两项以上资质更高、综合资质或战力更高的宠物均受保护；融合仍消耗正常金币。</div></div><label style="white-space:nowrap"><input type="checkbox" ${state.autoFuseActivePet?'checked':''} onchange="toggleAutoFuseActivePet(this.checked)"> 自动融合</label></div>`;
+  const p=selectedFusionTarget(),targets=(state.pets||[]);
+  return `<div class="notice auto-fuse-pet-panel" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>自动融合目标</b> · <span id="auto-fuse-pet-status">${state.autoFuseActivePet?'已开启':'已关闭'}</span><div class="compact-meta">所有同物种普通宠物均可自动融合，不再因类型、资质或战力而保留；只有变异X绝不会被自动消耗。融合仍消耗正常金币。</div><label>培养目标 <select onchange="setAutoFuseTarget(this.value)"><option value="">当前出战宠物</option>${targets.map(x=>`<option value="${x.id}" ${p?.id===x.id&&state.autoFuseTargetId?'selected':''}>${x.tier||1}阶 ${x.name} · ${PET_TYPES[x.type].name}</option>`).join('')}</select></label></div><label style="white-space:nowrap"><input type="checkbox" ${state.autoFuseActivePet?'checked':''} onchange="toggleAutoFuseActivePet(this.checked)"> 自动融合</label></div>`;
  }
  renderPets=function(){return autoFusePanel()+originalRenderPets();};
  ensureSetting();
