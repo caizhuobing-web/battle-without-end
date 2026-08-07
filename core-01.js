@@ -1,6 +1,7 @@
 'use strict';
-const VERSION='0.34.0';
-const SAVE_KEY='bwe-core-alpha-034';
+const VERSION='0.35.0';
+const SAVE_KEY='bwe-core-alpha-035';
+const ALPHA034_SAVE_KEY='bwe-core-alpha-034';
 const ALPHA033_SAVE_KEY='bwe-core-alpha-033';
 const ALPHA032_SAVE_KEY='bwe-core-alpha-032';
 const ALPHA031_SAVE_KEY='bwe-core-alpha-031';

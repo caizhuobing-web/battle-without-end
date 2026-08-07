@@ -1,4 +1,4 @@
-/* Alpha 0.34 iOS/PWA background battle catch-up.
+/* Alpha 0.35 iOS/PWA background battle catch-up.
    iOS suspends browser JS in background, so we freeze the live timer on hide
    and replay the missed 650ms battle ticks when the app becomes visible again. */
 (()=>{
@@ -88,6 +88,7 @@
    const CHUNK=1000;
    for(let i=0;i<ticks;i++){
     battleTick();
+    if(!state.running)break;
     if(i>0&&i%CHUNK===0){
      const pct=Math.min(99,Math.round(i/ticks*100));
      const el=document.getElementById('offline-battle-toast');if(el)el.querySelector('b').textContent=`正在结算后台战斗… ${pct}%`;

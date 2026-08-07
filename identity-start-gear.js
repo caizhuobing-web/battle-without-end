@@ -1,4 +1,4 @@
-/* Alpha 0.34 v11 - single humble start + profession-specific equipment scoring */
+/* Alpha 0.35 - single humble start + profession-specific equipment scoring */
 (()=>{
  'use strict';
  if(typeof STYLES==='undefined'||typeof SKILLS==='undefined')return;
@@ -85,11 +85,11 @@
  renderStart=function(){
   const app=document.getElementById('app');if(!app)return;
   const r=RACES.human,c=STYLES.farmer,sk=SKILLS.farmer_swing;
-  app.innerHTML=`<div class="start"><h1>无尽战域：核心 Alpha 0.34</h1><p class="subtitle">从普通人开始，靠Boss掉落收集种族、职业与技能。</p>
+  app.innerHTML=`<div class="start"><h1>无尽战域：核心 Alpha 0.35</h1><p class="subtitle">从普通人开始，击败首个Boss选择正式职业，再逐步收集身份与构筑。</p>
    <label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label>
    <div class="grid2" style="margin-top:10px"><div class="choice selected"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">唯一初始种族｜特性【${r.traitName}】${r.traitDesc}</div></div>
    <div class="choice selected"><h3>${c.icon}${c.name} · ${identityRarityLabel(c)}</h3><div class="compact-meta">唯一初始职业｜${c.desc}</div><div class="compact-meta">唯一技能：【${sk.name}】｜${sk.desc}</div></div></div>
-   ${helpBlock('开局规则','不再提供种族或职业三选一。除人类与农民外，所有种族和职业都必须由Boss身份掉落永久解锁。职业技能练到Lv.10后可以永久传承；种族特性不能传承。')}
+   ${helpBlock('开局规则','固定以人类·农民开局。首次击败月背巨狼后获得灰尾幼狼，并从战士、游侠、法师中选择第一个正式职业；其他种族和职业继续由Boss身份掉落永久解锁。职业技能练到Lv.10后可以永久传承；种族特性不能传承。')}
    <div class="controls" style="margin-top:10px"><button onclick="startGame()">开始无尽战斗</button></div></div>`;
  };
  startGame=function(){
