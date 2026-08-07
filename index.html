@@ -7,49 +7,31 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="无尽战域">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
-<title>无尽战域 Alpha 0.34</title>
-<style>
-html,body{margin:0;min-height:100%;background:#15130f;color:#eadfca;font-family:Arial,"Microsoft YaHei",sans-serif}
-#boot{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
-.box{width:min(420px,92vw);border:1px solid #4b402e;background:#211d16;padding:18px;border-radius:8px}
-h1{font-size:18px;color:#f0c86d;margin:0 0 8px}.muted{font-size:12px;color:#a99a80}
-.bar{height:7px;background:#0f0d0a;border:1px solid #403624;margin-top:12px}.fill{height:100%;width:8%;background:#d7ad55;transition:width .15s}
-#error{color:#df6d61;font-size:12px;margin-top:9px;white-space:pre-wrap}
-</style>
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
+<title>无尽战域：核心 Alpha 0.34</title>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
-<div id="boot"><div class="box"><h1>无尽战域 · Alpha 0.34</h1><div class="muted">正在载入游戏数据…</div><div class="bar"><div class="fill" id="fill"></div></div><div id="error"></div></div></div>
-<script>
-(async()=>{
- const parts=["00","01","02","03","04","05","06"];
- const fill=document.getElementById("fill"),err=document.getElementById("error");
- try{
-   if(typeof DecompressionStream==="undefined") throw new Error("当前浏览器不支持游戏解压。请使用最新版 Safari。");
-   let b64="";
-   for(let i=0;i<parts.length;i++){
-     const r=await fetch(`./app-034-${parts[i]}.b64?v=0341`,{cache:"no-cache"});
-     if(!r.ok) throw new Error(`载入数据失败 (${r.status})`);
-     b64+=(await r.text()).trim();
-     fill.style.width=`${10+Math.round((i+1)/parts.length*65)}%`;
-   }
-   const bin=atob(b64);
-   const bytes=new Uint8Array(bin.length);
-   for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
-   const ds=new DecompressionStream("gzip");
-   const html=await new Response(new Blob([bytes]).stream().pipeThrough(ds)).text();
-   fill.style.width="96%";
-   if(!html.includes("Alpha 0.34")||!html.includes("const VERSION='0.34.0'")) throw new Error("游戏数据校验失败，请重新载入。");
-   document.open();
-   document.write(html);
-   document.close();
- }catch(e){
-   console.error(e);
-   err.textContent="载入失败："+(e&&e.message?e.message:String(e))+"\n请刷新页面重试。";
-   fill.style.width="0";
- }
-})();
-</script>
+<div id="app"></div>
+<script src="./core-00.js"></script>
+<script src="./core-01.js"></script>
+<script src="./core-02.js"></script>
+<script src="./core-03.js"></script>
+<script src="./core-04.js"></script>
+<script src="./core-05.js"></script>
+<script src="./core-06.js"></script>
+<script src="./core-07.js"></script>
+<script src="./core-08.js"></script>
+<script src="./core-09.js"></script>
+<script src="./core-10.js"></script>
+<script src="./core-11.js"></script>
+<script src="./core-12.js"></script>
+<script src="./core-13.js"></script>
+<script src="./core-14.js"></script>
+<script src="./core-15.js"></script>
 </body>
 </html>
