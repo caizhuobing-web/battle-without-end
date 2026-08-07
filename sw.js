@@ -1,4 +1,4 @@
-const CACHE_NAME="bwe-alpha-034-v4";
+const CACHE_NAME="bwe-alpha-034-v5";
 const CORE=[
  "./","./index.html","./style.css","./ios-safe.css",
  "./core-00.js","./core-01.js","./core-02.js","./core-03.js","./core-04.js","./core-05.js","./core-06.js","./core-07.js",
