@@ -104,6 +104,58 @@ test('ordinary enemies never drop pets while a defeated Boss can',()=>{
  assert(result.afterBoss>result.afterNormal);
 });
 
+test('treasure monsters replace only ordinary encounters at 0.5% and carry 100x base gold',()=>{
+ const context=createContext();
+ const result=JSON.parse(evaluate(context,`(()=>{
+  startGame();state.running=false;Math.random=()=>0;
+  const treasure=makeEnemy(false),boss=makeEnemy(true);
+  return JSON.stringify({chance:TREASURE_MONSTER_CHANCE,treasure:treasure.treasure,boss:treasure.boss,name:treasure.name,goldBase:treasure.gold/3.2,bossTreasure:boss.treasure});
+ })()`));
+ assert.strictEqual(result.chance,.005);
+ assert.deepStrictEqual({treasure:result.treasure,boss:result.boss,name:result.name,goldBase:result.goldBase,bossTreasure:result.bossTreasure},{treasure:true,boss:false,name:'宝箱怪',goldBase:100,bossTreasure:false});
+});
+
+test('Boss prefix weights and global loot multipliers match the GM curve',()=>{
+ const context=createContext();
+ const result=JSON.parse(evaluate(context,`(()=>{
+  startGame();state.running=false;Math.random=()=>.999;
+  const boss=makeEnemy(true),baseIdentity=identityDropChance(1),boostedIdentity=identityDropChance(boss.bossLootMult);
+  Math.random=()=>.005;const baseMutation=rollPetMutation(map(),1),boostedMutation=rollPetMutation(map(),boss.bossLootMult);
+  return JSON.stringify({weight:BOSS_PREFIXES.reduce((n,x)=>n+x.w,0),id:boss.bossPrefixId,loot:boss.bossLootMult,gold:boss.bossGoldMult,name:boss.name,identityRatio:boostedIdentity/baseIdentity,baseMutation,boostedMutation});
+ })()`));
+ assert.strictEqual(result.weight,100);
+ assert.deepStrictEqual({id:result.id,loot:result.loot,gold:result.gold},{id:'astral',loot:3,gold:5});
+ assert(result.name.includes('星辉'));
+ assert(Math.abs(result.identityRatio-3)<1e-9);
+ assert.strictEqual(result.baseMutation,false);
+ assert.strictEqual(result.boostedMutation,true);
+});
+
+test('Boss retries preserve the original rare prefix instead of rerolling it',()=>{
+ const context=createContext();
+ const result=JSON.parse(evaluate(context,`(()=>{
+  startGame();state.running=false;state.firstBossMilestoneClaimed=true;Math.random=()=>.999;
+  const cycle=ensureBossCycle('meadow');state.enemy=makeEnemy(true);state.enemy.bossCyclePeriod=25;state.enemy.hp=Math.round(state.enemy.maxHp*.5);loseBattle();
+  const stored=state.bossProgress.meadow.prefixId;cycle.retryCountdown=0;state.enemy=null;Math.random=()=>0;ensureEnemy();
+  return JSON.stringify({stored,retry:state.enemy.bossPrefixId,loot:state.enemy.bossLootMult,name:state.enemy.name});
+ })()`));
+ assert.deepStrictEqual({stored:result.stored,retry:result.retry,loot:result.loot},{stored:'astral',retry:'astral',loot:3});
+ assert(result.name.includes('星辉'));
+});
+
+test('Boss global loot prefix raises pet acquisition without enabling ordinary pet drops',()=>{
+ const context=createContext();
+ const result=JSON.parse(evaluate(context,`(()=>{
+  startGame();state.running=false;state.firstBossMilestoneClaimed=true;Math.random=()=>.4;
+  state.enemy=makeEnemy(true);state.enemy.bossLootMult=1;winBattle();const basePets=state.pets.length;
+  state.enemy=makeEnemy(true);state.enemy.bossLootMult=3;winBattle();const boostedPets=state.pets.length;
+  state.enemy=makeEnemy(false);winBattle();return JSON.stringify({basePets,boostedPets,afterNormal:state.pets.length});
+ })()`));
+ assert.strictEqual(result.basePets,0);
+ assert.strictEqual(result.boostedPets,1);
+ assert.strictEqual(result.afterNormal,1);
+});
+
 test('Boss retry uses half of the original encounter period even after danger falls',()=>{
  const context=createContext();
  const result=JSON.parse(evaluate(context,`(()=>{

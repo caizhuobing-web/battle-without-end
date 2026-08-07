@@ -89,6 +89,15 @@ const MONSTER_TITLES=[
  {name:'古老的',w:6,atkMul:3,hpMul:10,defMul:1.5,xp:4,gold:10,drop:2.8},
  {name:'未知的',w:3,atkMul:2,hpMul:3,defMul:5,xp:3,gold:5,drop:1.8}
 ];
+const TREASURE_MONSTER_CHANCE=.005;
+const TREASURE_MONSTER_TITLE={name:'',atkMul:1.20,hpMul:2,defMul:1.15,xp:2,gold:100,drop:3};
+const BOSS_PREFIXES=[
+ {id:'none',name:'',w:58,hp:1,atk:1,def:1,gold:1,loot:1,desc:'普通区域首领。'},
+ {id:'hoarder',name:'藏珍',w:25,hp:1.05,atk:1.03,def:1,gold:1.25,loot:1.25,desc:'全域掉宝率×1.25。'},
+ {id:'gilded',name:'镀金',w:12,hp:1.12,atk:1.08,def:1.04,gold:1.75,loot:1.50,desc:'全域掉宝率×1.50。'},
+ {id:'blessed',name:'天眷',w:4,hp:1.22,atk:1.15,def:1.08,gold:2.5,loot:2,desc:'全域掉宝率×2.00。'},
+ {id:'astral',name:'星辉',w:1,hp:1.40,atk:1.25,def:1.12,gold:5,loot:3,desc:'全域掉宝率×3.00。'}
+];
 const QUALITY_SCORE_MULT=[1,1.32,1.75,2.15,2.65,4.15];
 function equipmentTier(mapDef=map(),sourceThreat=null){return mapDef.gearTier||1}
 function gearTierScore(tier,rarity=0){return Math.round(32*Math.pow(1.75,Math.max(0,tier-1))*(QUALITY_SCORE_MULT[rarity]||1))}
