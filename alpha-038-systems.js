@@ -9,10 +9,7 @@
  const SKILL_RULES={
   auto:'自动判断',boss:'仅Boss',normal:'仅普通怪',targetLow:'目标生命≤40%',selfLow:'自身生命≤60%',shield:'仅目标有护盾'
  };
- const NORMAL_PET_POOLS={
-  meadow:['灰尾幼狼'],hill:['裂风幼狮'],forest:['树灵幼芽'],
-  shore:['霜鳍幼兽'],ruins:['王魂侍从'],abyss:['星核幼龙']
- };
+ const BOSS_PET_BY_MAP=Object.fromEntries(MAPS.map(m=>[m.id,m.pet]));
  const NORMAL_PET_MODS={
   '月角幼兔':{atk:1.08,speed:true},'青芽史莱姆':{hp:1.12},'风羽幼鹰':{atk:1.12},'岩鳞幼蜥':{def:1.13},
   '荧角幼鹿':{magic:1.12},'苔甲幼兽':{hp:1.08,def:1.08},'冰壳幼蟹':{def:1.15},'霜鳍幼鱼':{magic:1.13},
@@ -35,7 +32,7 @@
 
  function petGroup(name){
   const boss=MAPS.find(m=>m.pet===name);if(boss)return boss.id;
-  return Object.keys(NORMAL_PET_POOLS).find(id=>NORMAL_PET_POOLS[id].includes(name))||'meadow';
+  return Object.keys(BOSS_PET_BY_MAP).find(id=>BOSS_PET_BY_MAP[id]===name)||'meadow';
  }
  function ensureAlpha038State(){
   state.version=VERSION;
@@ -174,9 +171,9 @@
  };
 
  // ----- Alpha 0.37: ordinary hatchlings, codex and branch evolution -----
- Object.entries(NORMAL_PET_POOLS).forEach(([group,names])=>names.forEach(name=>{
-  if(!PET_SPECIES[name])PET_SPECIES[name]={archetype:'野生幼体',preferred:['Attack','Defense','Magic','Balance'],focus:'按类型培养',desc:`来自${MAPS.find(m=>m.id===group)?.name||'未知区域'}的普通怪幼体。`,trait:'野性适应',traitDesc:'拥有稳定的类型成长。',skill:'野性协击',skillDesc:'依靠宠物类型技能参与自动战斗。'};
- }));
+ Object.entries(BOSS_PET_BY_MAP).forEach(([group,name])=>{
+  if(!PET_SPECIES[name])PET_SPECIES[name]={archetype:'首领幼体',preferred:['Attack','Defense','Magic','Balance'],focus:'按类型培养',desc:`由${MAPS.find(m=>m.id===group)?.name||'未知区域'}的区域Boss掉落。`,trait:'首领血脉',traitDesc:'拥有稳定的类型成长。',skill:'血脉协击',skillDesc:'依靠宠物类型技能参与自动战斗。'};
+ });
  Object.assign(PET_SPECIES_ICONS,{'月角幼兔':'🐇','青芽史莱姆':'🟢','风羽幼鹰':'🦅','岩鳞幼蜥':'🦎','荧角幼鹿':'🦌','苔甲幼兽':'🦬','冰壳幼蟹':'🦀','霜鳍幼鱼':'🐟','王城幼魂':'👻','黑甲幼侍':'🛡️','虚空幼犬':'🐕','星蚀幼核':'☄️'});
  const petStatsBefore038=petStats;
  petStats=function(p){
@@ -208,7 +205,7 @@
   return `<div class="card evolution-card"><h3>分支进化待选择</h3>${pending.map(p=>{const n=evolutionNames(p),stage=!p.evolutionBranches?.stage3?3:6,opts=stage===3?n.three:n.six,values=stage===3?['assault','guardian']:['apex','harmony'];return `<div class="item"><div><b>${p.tier}阶 ${p.name}</b><div class="compact-meta">当前：${evolutionRouteText(p)}｜Tier ${stage} 分支</div></div><div class="controls"><button onclick="choosePetEvolution('${p.id}',${stage},'${values[0]}')">${opts[0]}</button><button onclick="choosePetEvolution('${p.id}',${stage},'${values[1]}')">${opts[1]}</button></div></div>`}).join('')}</div>`;
  }
  function petCodexPanel(){
-  const all=[...new Set([...MAPS.map(m=>m.pet),...Object.values(NORMAL_PET_POOLS).flat()])],seen=all.filter(name=>state.petCodex[name]>0);
+  const all=[...new Set([...MAPS.map(m=>m.pet),...Object.values(BOSS_PET_BY_MAP)])],seen=all.filter(name=>state.petCodex[name]>0);
   return `<div class="card"><h3>宠物图鉴 ${seen.length}/${all.length}</h3><div class="codex-grid">${all.map(name=>`<span class="${state.petCodex[name]?'seen':'unseen'}">${state.petCodex[name]?`${PET_SPECIES_ICONS[name]||'🐾'}${name} ×${state.petCodex[name]}`:'？？？'}</span>`).join('')}</div></div>`;
  }
  const renderPetsBefore038=renderPets;
@@ -247,7 +244,6 @@
  winBattle=function(){
   const defeated=state.enemy?{...state.enemy}:null,mapId=state.mapId,wasAbyss=mapId==='abyss',depth=state.abyssDepth||1,retryFiller=wasAbyss&&!state.enemy?.boss&&!!state.bossProgress?.abyss?.active;
   const result=winBattleBefore038();
-  if(defeated&&!defeated.boss&&Math.random()<.025){const name=NORMAL_PET_POOLS[mapId]?.[0];if(name){const pet=createPet(name,rollPetType(),Math.max(0,MAPS.findIndex(m=>m.id===mapId)));receivePet(pet);log(`【区域宠物】${defeated.name}留下了${name}。每张地图只掉落这一种宠物。`,'loot','loot')}}
   if(wasAbyss&&defeated&&!retryFiller){state.abyssDepth=depth+1;state.abyssHighest=Math.max(state.abyssHighest||1,state.abyssDepth);state.enemy=null;prepareNewBattle();if(defeated.boss)log(`【星渊突破】击败第${depth}层机制Boss，检查点推进至第${state.abyssDepth}层。`,'important','important');save()}
   return result;
  };
