@@ -491,7 +491,7 @@ test("five permanent maps and fourteen global difficulties replace Abyss and reb
       def: result.world.def,
       reward: result.world.reward,
     },
-    { hp: 74, atk: 4.9, def: Math.sqrt(74), reward: 5.9 },
+    { hp: 10.8, atk: 2.98, def: Math.sqrt(10.8), reward: 5.9 },
   );
 });
 
@@ -649,6 +649,30 @@ test("world difficulty changes only by player choice and boss victories unlock w
     return JSON.stringify({afterLoss,current:state.worldDifficulty,highest:state.highestUnlockedDifficulty});
   })()`));
   assert.deepStrictEqual(result, { afterLoss: "normal", current: "normal", highest: 1 });
+});
+
+test("world difficulty owns ten-level enemy bands from normal through torment X", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    alpha041EnsureState();state.highestUnlockedDifficulty=13;
+    const rows=[];
+    for(const d of ALPHA_041_DIFFICULTIES){
+      setWorldDifficulty(d.id);
+      const levels=[];
+      for(let i=0;i<200;i++) levels.push(makeEnemy(false).level);
+      rows.push({id:d.id,min:Math.min(...levels),max:Math.max(...levels),mapLevels:[...map().levels]});
+    }
+    return JSON.stringify(rows);
+  })()`));
+  assert.strictEqual(result.length, 14);
+  result.forEach((row, index) => {
+    assert(row.min >= index * 10 + 1, `${row.id} spawned below its level band`);
+    assert(row.max <= (index + 1) * 10, `${row.id} spawned above its level band`);
+    assert.deepStrictEqual(row.mapLevels, [index * 10 + 1, (index + 1) * 10]);
+  });
+  assert.deepStrictEqual(result[0].mapLevels, [1, 10]);
+  assert.deepStrictEqual(result[4].mapLevels, [41, 50]);
+  assert.deepStrictEqual(result[13].mapLevels, [131, 140]);
 });
 
 test("boss progress is isolated by map and world difficulty", () => {
