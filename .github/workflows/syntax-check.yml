@@ -1,4 +1,4 @@
-name: Alpha 0.45 Lifelong Companion Gate
+name: Alpha 0.45.1 Defeat Diagnosis Gate
 on:
   push:
     branches: [main]

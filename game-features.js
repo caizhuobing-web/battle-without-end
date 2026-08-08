@@ -320,7 +320,7 @@
     const r = RACES.human,
       c = STYLES.farmer,
       sk = SKILLS.farmer_swing;
-    app.innerHTML = `<div class="start"><h1>无尽战域：核心 Alpha 0.40</h1><p class="subtitle">从普通人开始，正式职业沿谱系持续向上进阶，不需要回头补练低级职业。</p>
+    app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.45.2</h1><p class="subtitle">从普通人开始，正式职业沿谱系持续向上进阶，不需要回头补练低级职业。</p>
    <label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label>
    <div class="grid2" style="margin-top:10px"><div class="choice selected"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">唯一初始种族｜特性【${r.traitName}】${r.traitDesc}</div></div>
    <div class="choice selected"><h3>${c.icon}${c.name} · ${identityRarityLabel(c)}</h3><div class="compact-meta">唯一初始职业｜${c.desc}</div><div class="compact-meta">唯一技能：【${sk.name}】｜${sk.desc}</div></div></div>

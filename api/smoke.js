@@ -27,7 +27,7 @@ const REQUIRED_IDENTIFIERS = [
 ];
 
 const REQUIRED_LITERALS = [
-  "Alpha 0.45",
+  "Alpha 0.45.2",
   "alpha043OfflineBattleCount",
   "alpha044AttackEvaded",
   "alpha045CodexSummary",
@@ -65,11 +65,11 @@ module.exports = async (req, res) => {
       chunks.push(await r.text());
     }
     const code = chunks.join("\n");
-    new vm.Script(code, { filename: "alpha-045-all.js" });
+    new vm.Script(code, { filename: "alpha-0452-all.js" });
     const missing = findMissing(code);
     res.status(missing.length ? 500 : 200).json({
       ok: missing.length === 0,
-      version: "0.45.0",
+      version: "0.45.2",
       files: chunks.length,
       bytes: code.length,
       missing,

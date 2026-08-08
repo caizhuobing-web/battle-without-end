@@ -1416,25 +1416,98 @@ details.mini .help-body {
   }
 }
 
-.defeat-report {
+.defeat-report-slot {
+  height: 42px;
   margin: 8px;
-  padding: 9px;
-  border: 1px solid #9c493f;
+  overflow: hidden;
+  overflow-anchor: none;
+}
+.defeat-report-trigger {
+  width: 100%;
+  height: 42px;
+  min-height: 42px;
+  padding: 6px 10px;
+  border: 1px solid #75453c;
   border-radius: 8px;
-  background: linear-gradient(135deg, #2a1714, #17110f);
+  background: linear-gradient(135deg, #241815, #171310);
   color: #e7c9c4;
-  font-size: 11px;
-  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+.defeat-report-trigger span {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.defeat-report-trigger b {
+  color: #ffb3a8;
+  white-space: nowrap;
+}
+.defeat-report-trigger small {
+  min-width: 0;
+  overflow: hidden;
+  color: #c7aaa4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.defeat-report-trigger i {
+  color: #f0c86d;
+  font-style: normal;
+  white-space: nowrap;
+}
+.defeat-report-trigger:disabled {
+  cursor: default;
+  border-color: #44372d;
+  opacity: 0.72;
+}
+.defeat-report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(8, 7, 6, 0.76);
+  backdrop-filter: blur(2px);
+}
+.defeat-report-sheet {
+  width: min(520px, 100%);
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid #b85b4f;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #2a1714, #17110f);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.58);
+  color: #e7c9c4;
+  font-size: 12px;
+  line-height: 1.55;
 }
 .defeat-report-head {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 8px;
-  margin-bottom: 5px;
+  margin-bottom: 10px;
   color: #ffb3a8;
 }
-.defeat-report > div + div {
+.defeat-report-head span {
+  display: block;
   margin-top: 3px;
+  color: #c7aaa4;
+  font-size: 11px;
+}
+.defeat-report-close {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 5px 10px;
+}
+.defeat-report-body > div + div {
+  margin-top: 8px;
 }
 .progression-board {
   border-color: #8f7138;
@@ -1470,12 +1543,16 @@ details.mini .help-body {
   .goal-grid {
     grid-template-columns: 1fr;
   }
-  .defeat-report-head {
-    display: block;
+  .defeat-report-overlay {
+    place-items: end center;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
   }
-  .defeat-report-head span {
-    display: block;
-    margin-top: 3px;
+  .defeat-report-sheet {
+    width: 100%;
+    max-height: 68vh;
+  }
+  .defeat-report-trigger span {
+    gap: 6px;
   }
 }
 .shop-market {

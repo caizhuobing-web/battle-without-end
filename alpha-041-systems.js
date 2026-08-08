@@ -101,6 +101,27 @@
   function difficulty() {
     return DIFFICULTY_BY_ID[state.worldDifficulty] || DIFFICULTIES[0];
   }
+  function petDropTierProfile041(d = difficulty()) {
+    const index = clamp(Number(d?.index || 0), 0, DIFFICULTIES.length - 1),
+      guaranteed = Math.min(5, 1 + Math.floor(index / 3)),
+      promoted = Math.min(6, guaranteed + 1),
+      promotionChance = (index % 3) * 0.2;
+    return {
+      guaranteed,
+      promoted,
+      promotionChance,
+      label: promotionChance
+        ? `${guaranteed}阶${Math.round((1 - promotionChance) * 100)}% / ${promoted}阶${Math.round(promotionChance * 100)}%`
+        : `${guaranteed}阶100%`,
+    };
+  }
+  window.alpha0452PetDropTierProfile = petDropTierProfile041;
+  rollPetTier = function () {
+    const profile = petDropTierProfile041();
+    return Math.random() < profile.promotionChance
+      ? profile.promoted
+      : profile.guaranteed;
+  };
   function applyDifficultyLevels() {
     const d = difficulty();
     MAPS.forEach((m) => { m.levels = [d.minLevel, d.maxLevel]; });
@@ -162,6 +183,7 @@
     }
     (state.pets || []).forEach((p) => {
       p.tier = clamp(Number(p.tier || 1), 1, 10);
+      migratePetFusionInvestment(p);
       p.baseSpecies = petBaseSpecies(p) === "星核幼龙" ? "灰尾幼狼" : petBaseSpecies(p);
       p.type = ({
         "灰尾幼狼": "Attack", "裂风幼狮": "Attack", "树灵幼芽": "Magic",
@@ -479,13 +501,14 @@
     const d = difficulty(), stats = state.difficultyStats[d.id] || {}, damage = state.buildDamage042[d.id] || {}, total = Object.values(damage).reduce((n, x) => n + x, 0);
     const damageRows = Object.entries(DAMAGE_LABELS_042).filter(([id]) => damage[id]).sort((a,b)=>(damage[b[0]]||0)-(damage[a[0]]||0)).map(([id,name])=>`<div class="stat"><b>${total ? Math.round((damage[id]||0)/total*100) : 0}%</b>${name}</div>`).join("");
     const cycle = ensureBossCycle(state.mapId);
-    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 装备${1 + Math.floor(d.index / 2)}阶 · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta">威胁T${cycle.threatTier || 0}/${THREAT_CAP_042}：胜利+1、失败−1；低威胁偏低等级，高威胁偏高等级，T${THREAT_CAP_042}固定出现Lv.${d.maxLevel}普通怪。</div><div class="compact-meta"><b>当前构筑：${activeBuildText()}</b>｜普通—传说按评分优先；只有命名神话按机制选择。</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="compact-meta">${bossEncounterText(state.mapId)}。区域Boss由普通怪进度触发；击败当前最高难度的区域Boss后解锁下一档，不自动切换。</div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。</div>${damageRows ? `<h3>构筑伤害贡献</h3><div class="stat-table">${damageRows}</div>` : ""}</div>`;
+    const petTier = petDropTierProfile041(d);
+    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 装备${1 + Math.floor(d.index / 2)}阶 · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta"><b>Boss宠物初始阶级：${petTier.label}</b>。自然掉落最高6阶，7—10阶仍需同物种融合。</div><div class="compact-meta">威胁T${cycle.threatTier || 0}/${THREAT_CAP_042}：胜利+1、失败−1；低威胁偏低等级，高威胁偏高等级，T${THREAT_CAP_042}固定出现Lv.${d.maxLevel}普通怪。</div><div class="compact-meta"><b>当前构筑：${activeBuildText()}</b>｜普通—传说按评分优先；只有命名神话按机制选择。</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="compact-meta">${bossEncounterText(state.mapId)}。区域Boss由普通怪进度触发；击败当前最高难度的区域Boss后解锁下一档，不自动切换。</div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。</div>${damageRows ? `<h3>构筑伤害贡献</h3><div class="stat-table">${damageRows}</div>` : ""}</div>`;
   };
   renderMaps = function () {
     return `${window.renderMapSystemsBefore()}${helpBlock("永久地图规则", "地图只决定怪物生态、Boss、可获得的宠物物种与装备部位倾向。定向掉落只提高对应装备部位的出现概率，不提高品质、阶级、属性或收益；其他部位仍然会掉落。五张地图共享等级、装备成长和世界难度。")}${MAPS.map((m) => {
       const bp = state.bossState?.[bossSnapshotKey(m.id)]?.progress;
       const snap = state.bossState?.[bossSnapshotKey(m.id)]?.cycle || (m.id === state.mapId ? ensureBossCycle(m.id) : null);
-      return `<div class="map-card stable-card ${state.mapId === m.id ? "selected" : ""}"><div class="map-head"><b>${m.name}</b><span>${m.pet}</span></div><div class="compact-meta">怪物：${m.monsters.join("、")} · Boss：${m.boss}</div><div class="compact-meta">威胁T${snap?.threatTier || 0}/${THREAT_CAP_042} · ${m.id === state.mapId ? bossEncounterText(m.id) : `Boss进度 ${snap?.normalSinceBoss || 0}/${bossCycleConfig(m.id).period}`}</div><div class="compact-meta">装备部位倾向：${MAP_FOCUS[m.id]}（提高概率，非限定掉落） · 宠物：${m.pet}${bp ? ` · 受伤Boss ${Math.round(bp.hp)}/${bp.maxHp}` : ""}</div><div class="controls"><button ${state.mapId === m.id ? "disabled" : ""} onclick="changeMap('${m.id}')">前往</button></div></div>`;
+      return `<div class="map-card stable-card ${state.mapId === m.id ? "selected" : ""}"><div class="map-head"><b>${m.name}</b><span>${m.pet}</span></div><div class="compact-meta">怪物：${m.monsters.join("、")} · Boss：${m.boss}</div><div class="compact-meta">威胁T${snap?.threatTier || 0}/${THREAT_CAP_042} · ${m.id === state.mapId ? bossEncounterText(m.id) : `Boss进度 ${snap?.normalSinceBoss || 0}/${bossCycleConfig(m.id).period}`}</div><div class="compact-meta">装备部位倾向：${MAP_FOCUS[m.id]}（提高概率，非限定掉落） · 宠物：${m.pet} · 当前难度${petDropTierProfile041().label}${bp ? ` · 受伤Boss ${Math.round(bp.hp)}/${bp.maxHp}` : ""}</div><div class="controls"><button ${state.mapId === m.id ? "disabled" : ""} onclick="changeMap('${m.id}')">前往</button></div></div>`;
     }).join("")}`;
   };
 
