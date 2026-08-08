@@ -1,0 +1,12 @@
+{
+  "name": "battle-without-end",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "node build-static.mjs",
+    "test": "node tests/alpha-039-regression.js"
+  },
+  "devDependencies": {
+    "vite": "^7.1.1"
+  }
+}

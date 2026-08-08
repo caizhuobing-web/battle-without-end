@@ -42,6 +42,7 @@
   };
 
   const LEVEL_CAP_041 = 140;
+  const THREAT_CAP_042 = 9;
   const BUILDS_041 = {
     crit: { name: "暴击连斩流", icon: "⚔️" },
     blood: { name: "血牛血爆流", icon: "🩸" },
@@ -136,6 +137,13 @@
     state.difficultyStats = state.difficultyStats || {};
     state.buildDamage042 = state.buildDamage042 || {};
     state.bossState = state.bossState || {};
+    const activeBossKey = bossSnapshotKey();
+    if (!state.bossState[activeBossKey] && state.bossProgress?.[state.mapId]) {
+      state.bossState[activeBossKey] = {
+        progress: clone(state.bossProgress[state.mapId], null),
+        cycle: clone(state.bossCycles?.[state.mapId], null),
+      };
+    }
     if (!PERMANENT_MAP_IDS.includes(state.mapId)) state.mapId = "ruins";
     state.legacy041 = state.legacy041 || {
       rebirths: Number(state.rebirths || 0),
@@ -145,7 +153,13 @@
     state.rebirths = 0;
     state.rebirthLaws = { war: 0, time: 0, hunt: 0 };
     state.petDust = 0;
-    state.petCapacity = 9999;
+    // 0.41 used 9999 as a temporary "unlimited" sentinel. Restore a real,
+    // visible capacity without deleting companions already owned.
+    if (!Number.isFinite(state.petCapacity) || state.petCapacity > 240) {
+      state.petCapacity = Math.max(12, Math.ceil((state.pets || []).length / 2) * 2);
+    } else {
+      state.petCapacity = Math.max(12, Number(state.petCapacity) || 12, (state.pets || []).length);
+    }
     (state.pets || []).forEach((p) => {
       p.tier = clamp(Number(p.tier || 1), 1, 10);
       p.baseSpecies = petBaseSpecies(p) === "星核幼龙" ? "灰尾幼狼" : petBaseSpecies(p);
@@ -171,7 +185,8 @@
     ensureAlpha041State();
   };
 
-  // Global difficulty replaces map threat, abyss depth and rebirth scaling.
+  // World difficulty sets the ten-level band. Threat only biases which level
+  // appears inside that band; it does not add stats, rewards or map growth.
   worldCombatScale = function () {
     const d = difficulty();
     return {
@@ -190,32 +205,40 @@
       identity: 1,
     };
   };
-  threatTier = () => 0;
-  threatUnlocked = () => 0;
-  threatCap = () => 0;
-  threatCapText = () => "全局难度";
-  dangerRise = () => {};
-  dangerRecordWin = () => {};
-  dangerRecordLoss = () => {};
+  threatTier = (id = state.mapId) => clamp(Number(ensureBossCycle(id).threatTier) || 0, 0, THREAT_CAP_042);
+  threatUnlocked = (id = state.mapId) => clamp(Number(ensureBossCycle(id).threatUnlocked) || 0, 0, THREAT_CAP_042);
+  threatCap = () => THREAT_CAP_042;
+  threatCapText = () => `上限T${THREAT_CAP_042}`;
+  function shiftThreat(id, delta) {
+    const c = ensureBossCycle(id), before = clamp(Number(c.threatTier) || 0, 0, THREAT_CAP_042);
+    c.threatTier = clamp(before + delta, 0, THREAT_CAP_042);
+    c.threatUnlocked = Math.max(Number(c.threatUnlocked) || 0, c.threatTier);
+    if (c.threatTier !== before && (c.threatTier === 0 || c.threatTier === THREAT_CAP_042 || c.threatTier % 3 === 0)) {
+      log(`【威胁度】${MAPS.find((m) => m.id === id)?.name || "当前地图"}升降至T${c.threatTier}；${c.threatTier === THREAT_CAP_042 ? "后续普通怪固定为本难度最高等级。" : "出怪等级权重已调整。"}`, "important", "important");
+    }
+  }
+  dangerRise = (m) => shiftThreat(m?.id || state.mapId, 1);
+  dangerRecordWin = (cycle) => shiftThreat(state.mapId, 1);
+  dangerRecordLoss = (e, m) => shiftThreat(m?.id || state.mapId, -1);
   const oldMakeEnemy041 = makeEnemy;
   makeEnemy = function (forceBoss = false) {
+    const m = map(), originalLevels = [...m.levels], t = threatTier(m.id);
+    if (!forceBoss) {
+      const min = difficulty().minLevel, max = difficulty().maxLevel;
+      const rolled = t >= THREAT_CAP_042
+        ? max
+        : min + Math.floor(Math.pow(Math.random(), 2.6 - 2.25 * (t / THREAT_CAP_042)) * (max - min + 1));
+      m.levels = [clamp(rolled, min, max), clamp(rolled, min, max)];
+    }
     const e = oldMakeEnemy041(forceBoss);
-    if (!e?.boss || !state.difficultyBreakthroughPending) return e;
-    const prefix = typeof bossPrefixById === "function" ? bossPrefixById(e.bossPrefixId) : null;
-    e.maxHp = Math.max(1, Math.round(e.maxHp / Math.max(1, prefix?.hp || 1) * 0.82));
-    e.hp = e.maxHp;
-    e.huntStartHp = e.maxHp;
-    e.atk = Math.max(1, Math.round(e.atk / Math.max(1, prefix?.atk || 1) * 0.9));
-    e.def = Math.max(0, Math.round(e.def / Math.max(1, prefix?.def || 1)));
-    e.level = difficulty().maxLevel + 1;
-    e.name = `世界突破：${difficulty().name}守门者`;
-    e.bossPrefixId = "none";
-    e.bossPrefixName = "";
-    e.bossPrefixDesc = "固定标准模板";
-    e.bossPrefixMechanic = "none";
-    e.bossLootMult = 1;
-    e.bossGoldMult = 1;
-    e.difficultyBreakthrough = true;
+    m.levels = originalLevels;
+    if (!e) return e;
+    e.threatTier = t;
+    // The naturally encountered regional Boss is also the breakthrough gate
+    // for the player's highest unlocked world difficulty.
+    if (e.boss && difficulty().index === state.highestUnlockedDifficulty && state.highestUnlockedDifficulty < DIFFICULTIES.length - 1) {
+      e.difficultyBreakthrough = true;
+    }
     return e;
   };
   bossCycleConfig = function () {
@@ -224,12 +247,8 @@
   };
 
   window.alpha041BeginOfflineProtection = function () {
-    const d = difficulty();
-    if (state.level <= d.maxLevel + 5) return null;
-    const original = MAPS.map((m) => m.levels.slice());
-    const protectedMax = Math.max(d.maxLevel, state.level - 6);
-    MAPS.forEach((m) => { m.levels = [d.minLevel, protectedMax]; });
-    return original;
+    // Offline settlement replays the exact difficulty selected by the player.
+    return null;
   };
   window.alpha041EndOfflineProtection = function (snapshot) {
     if (!Array.isArray(snapshot)) return;
@@ -383,16 +402,9 @@
     save(); render(false);
   };
   window.challengeDifficultyBoss = function () {
-    const c = ensureBossCycle(state.mapId);
-    c.normalSinceBoss = bossCycleConfig(state.mapId).period;
-    c.retryCountdown = 0;
-    state.difficultyBreakthroughPending = true;
-    state.enemy = null;
-    prepareNewBattle();
-    log(`已发起【${difficulty().name}】世界突破，下一战为区域Boss。`, "important", "important");
-    render(false);
+    alert("区域Boss必须通过击败普通怪累计狩猎进度后遭遇，不能手动重复挑战。");
   };
-  rebirth = function () { alert("转生已在Alpha 0.42永久移除；Lv.140后请继续优化装备、神话与宠物构筑。"); };
+  rebirth = function () { alert("转生已在Alpha 0.42.1永久移除；Lv.140后请继续优化装备、神话与宠物构筑。"); };
 
   const STARTER_PETS_041 = [
     ["灰尾幼狼", "进攻", "爆发、追击与处决"],
@@ -405,7 +417,10 @@
     const app = document.getElementById("app");
     if (!app) return;
     const choices = `<h2>选择初契伙伴</h2><div class="choice-grid">${STARTER_PETS_041.map(([name, role, desc], i) => `<div class="choice pet ${i === 0 ? "selected" : ""}" data-id="${name}" onclick="selectStart('pet','${name}')"><h3>${PET_SPECIES_ICONS[name] || "🐾"}${name} · ${role}</h3><div class="compact-meta">${desc}</div></div>`).join("")}</div>`;
-    app.innerHTML = app.innerHTML.replace('<div class="controls" style="margin-top:12px">', `${choices}<div class="controls" style="margin-top:12px">`);
+    const controls = app.querySelector(".start .controls");
+    if (controls && !app.querySelector(".choice.pet")) {
+      controls.insertAdjacentHTML("beforebegin", choices);
+    }
   };
   const previousStartGame = startGame;
   startGame = function () {
@@ -463,12 +478,14 @@
   window.renderMapSystemsBefore = () => {
     const d = difficulty(), stats = state.difficultyStats[d.id] || {}, damage = state.buildDamage042[d.id] || {}, total = Object.values(damage).reduce((n, x) => n + x, 0);
     const damageRows = Object.entries(DAMAGE_LABELS_042).filter(([id]) => damage[id]).sort((a,b)=>(damage[b[0]]||0)-(damage[a[0]]||0)).map(([id,name])=>`<div class="stat"><b>${total ? Math.round((damage[id]||0)/total*100) : 0}%</b>${name}</div>`).join("");
-    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 装备${1 + Math.floor(d.index / 2)}阶 · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta">生命×${d.hp.toFixed(2)} · 攻击×${d.atk.toFixed(2)} · 综合收益×${d.reward.toFixed(2)} · ${d.torment ? "命名神话／变异X已开放" : "等级成长阶段"}</div><div class="compact-meta"><b>当前构筑：${activeBuildText()}</b>｜普通—传说按评分优先；只有命名神话按机制选择。</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="controls"><button onclick="challengeDifficultyBoss()">挑战${d.name}固定突破Boss</button></div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。突破Boss无随机前缀；胜利只解锁下一档，不自动升档。</div>${damageRows ? `<h3>构筑伤害贡献</h3><div class="stat-table">${damageRows}</div>` : ""}</div>`;
+    const cycle = ensureBossCycle(state.mapId);
+    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 装备${1 + Math.floor(d.index / 2)}阶 · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta">威胁T${cycle.threatTier || 0}/${THREAT_CAP_042}：胜利+1、失败−1；低威胁偏低等级，高威胁偏高等级，T${THREAT_CAP_042}固定出现Lv.${d.maxLevel}普通怪。</div><div class="compact-meta"><b>当前构筑：${activeBuildText()}</b>｜普通—传说按评分优先；只有命名神话按机制选择。</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="compact-meta">${bossEncounterText(state.mapId)}。区域Boss由普通怪进度触发；击败当前最高难度的区域Boss后解锁下一档，不自动切换。</div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。</div>${damageRows ? `<h3>构筑伤害贡献</h3><div class="stat-table">${damageRows}</div>` : ""}</div>`;
   };
   renderMaps = function () {
-    return `${window.renderMapSystemsBefore()}${helpBlock("永久地图规则", "地图只决定怪物生态、Boss、宠物物种与定向掉落；五张地图共享等级、装备和世界难度，不再存在地图T级、装备阶级或宠物阶级门槛。")}${MAPS.map((m) => {
+    return `${window.renderMapSystemsBefore()}${helpBlock("永久地图规则", "地图只决定怪物生态、Boss、可获得的宠物物种与装备部位倾向。定向掉落只提高对应装备部位的出现概率，不提高品质、阶级、属性或收益；其他部位仍然会掉落。五张地图共享等级、装备成长和世界难度。")}${MAPS.map((m) => {
       const bp = state.bossState?.[bossSnapshotKey(m.id)]?.progress;
-      return `<div class="map-card ${state.mapId === m.id ? "selected" : ""}"><div class="map-head"><b>${m.name}</b><span>${m.pet}</span></div><div class="compact-meta">怪物：${m.monsters.join("、")} · Boss：${m.boss}</div><div class="compact-meta">定向：${MAP_FOCUS[m.id]} · 宠物：${m.pet}${bp ? ` · 受伤Boss ${Math.round(bp.hp)}/${bp.maxHp}` : ""}</div><div class="controls"><button ${state.mapId === m.id ? "disabled" : ""} onclick="changeMap('${m.id}')">前往</button></div></div>`;
+      const snap = state.bossState?.[bossSnapshotKey(m.id)]?.cycle || (m.id === state.mapId ? ensureBossCycle(m.id) : null);
+      return `<div class="map-card stable-card ${state.mapId === m.id ? "selected" : ""}"><div class="map-head"><b>${m.name}</b><span>${m.pet}</span></div><div class="compact-meta">怪物：${m.monsters.join("、")} · Boss：${m.boss}</div><div class="compact-meta">威胁T${snap?.threatTier || 0}/${THREAT_CAP_042} · ${m.id === state.mapId ? bossEncounterText(m.id) : `Boss进度 ${snap?.normalSinceBoss || 0}/${bossCycleConfig(m.id).period}`}</div><div class="compact-meta">装备部位倾向：${MAP_FOCUS[m.id]}（提高概率，非限定掉落） · 宠物：${m.pet}${bp ? ` · 受伤Boss ${Math.round(bp.hp)}/${bp.maxHp}` : ""}</div><div class="controls"><button ${state.mapId === m.id ? "disabled" : ""} onclick="changeMap('${m.id}')">前往</button></div></div>`;
     }).join("")}`;
   };
 

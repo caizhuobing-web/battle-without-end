@@ -92,8 +92,9 @@ const PET_TIER_INSTINCTS = {
 
 /* ===== core-01.js ===== */
 ("use strict");
-const VERSION = "0.42.0";
+const VERSION = "0.45.0";
 const SAVE_KEY = "bwe-core-alpha-041";
+const SAFE_BACKUP_KEY = "bwe-core-safe-backup-v1";
 const ALPHA040_SAVE_KEY = "bwe-core-alpha-040";
 const ALPHA039_SAVE_KEY = "bwe-core-alpha-039";
 const ALPHA038_SAVE_KEY = "bwe-core-alpha-038";
@@ -1054,10 +1055,24 @@ function weaponScoreFactor(it) {
     }[it.weaponType] || 1.04
   );
 }
+function refineMaxLevel(it) {
+  return it?.slot === "weapon" ? 10 : 5;
+}
+function refineBonusPct(it, level = it?.refine || 0) {
+  const capped = clamp(Math.round(Number(level) || 0), 0, refineMaxLevel(it));
+  // Weapons gain +5%, +10% ... +50% per level: +275% at refinement +10.
+  // Other slots retain the legacy +8% per level and +5 cap.
+  return it?.slot === "weapon"
+    ? (5 * capped * (capped + 1)) / 2
+    : capped * 8;
+}
+function refineMultiplier(it) {
+  return 1 + refineBonusPct(it) / 100;
+}
 function baseItemScore(it) {
   return Math.round(
     (it.score || gearTargetScore(inferItemLevel(it), it.rarity || 0)) *
-      (1 + (it.refine || 0) * 0.08),
+      refineMultiplier(it),
   );
 }
 function gearScoreBreakdown(it) {
@@ -1065,7 +1080,7 @@ function gearScoreBreakdown(it) {
     tier = inferItemTier(it),
     rarity = it.rarity || 0,
     weights = gearScoreWeights(),
-    refineMult = 1 + (it.refine || 0) * 0.08;
+    refineMult = refineMultiplier(it);
   let neutral = 0,
     weighted = 0,
     parts = 0;
@@ -1933,13 +1948,10 @@ const PROGRESSION_GOALS = [
     reward: { gold: 500, rarity: 2 },
   },
   {
-    id: "threat_3",
-    name: "危险猎手",
-    desc: "任一区域历史最高危险度达到T3",
-    done: (s) =>
-      Object.values(s.bossCycles || {}).some(
-        (cycle) => Number(cycle.threatUnlocked || 0) >= 3,
-      ),
+    id: "difficulty_expert",
+    name: "世界进阶",
+    desc: "解锁专家难度",
+    done: (s) => Number(s.highestUnlockedDifficulty || 0) >= 2,
     reward: { gold: 1800, rarity: 3 },
   },
   {
@@ -1951,24 +1963,26 @@ const PROGRESSION_GOALS = [
     reward: { gold: 3500, rarity: 4 },
   },
   {
-    id: "six_tier_six",
-    name: "六兽完全体",
-    desc: "六个区域物种都拥有一只6阶宠物",
-    done: (s) =>
-      MAPS.every((m) =>
-        (s.pets || []).some(
-          (p) => petBaseSpecies(p) === m.pet && Number(p.tier || 1) >= 6,
-        ),
-      ),
+    id: "pet_tier_six",
+    name: "伙伴完全体",
+    desc: "任意一只宠物达到6阶",
+    done: (s) => (s.pets || []).some((p) => Number(p.tier || 1) >= 6),
     reward: { gold: 8000, rarity: 5 },
   },
-  ...[10, 25, 50].map((depth, index) => ({
-    id: `abyss_${depth}`,
-    name: `星渊${depth}层`,
-    desc: `最高抵达星渊第${depth}层`,
-    done: (s) => Number(s.abyssHighest || 1) >= depth,
-    reward: { gold: [2500, 6000, 15000][index], rarity: [3, 4, 5][index] },
-  })),
+  {
+    id: "level_100",
+    name: "百级征途",
+    desc: "角色达到Lv.100",
+    done: (s) => Number(s.level || 1) >= 100,
+    reward: { gold: 6000, rarity: 4 },
+  },
+  {
+    id: "level_140",
+    name: "抵达终点",
+    desc: "角色达到等级上限Lv.140",
+    done: (s) => Number(s.level || 1) >= 140,
+    reward: { gold: 15000, rarity: 5 },
+  },
 ];
 function claimProgressionGoal(id) {
   const goal = PROGRESSION_GOALS.find((x) => x.id === id);
@@ -2932,6 +2946,13 @@ function fresh() {
     },
     inventory: [],
     autoSell: 0,
+    autoLoot: { minRarity: 0, keepUpgrades: true },
+    battleSpeed: 1,
+    lootFeedback: { sound: false, haptics: true, reducedMotion: false },
+    lootHighlights: [],
+    discoveredMythics: [],
+    lastOfflineReport: null,
+    lootPauseUntil: 0,
     gearScorePrefs: null,
     skills: {},
     skillUse: {},
@@ -2964,7 +2985,7 @@ function fresh() {
     nextItemId: 1,
     petDust: 0,
     petCapacity: 12,
-    inventoryCapacity: 40,
+    inventoryCapacity: 120,
     titlesUnlocked: [],
     equippedTitle: null,
     log: [],
@@ -2995,6 +3016,45 @@ function fresh() {
 let state = fresh();
 let tickTimer = null,
   saveTimer = null;
+function parseSaveVersion(value) {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(value || ""));
+  return match ? match.slice(1).map(Number) : null;
+}
+function compareSaveVersion(a, b) {
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+function validateSaveData(data) {
+  const incoming = parseSaveVersion(data?.version),
+    minimum = parseSaveVersion("0.3.0"),
+    current = parseSaveVersion(VERSION);
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    return { ok: false, reason: "存档内容不是有效对象" };
+  if (!incoming) return { ok: false, reason: "缺少有效版本号" };
+  if (compareSaveVersion(incoming, minimum) < 0)
+    return { ok: false, reason: "存档版本过旧，无法安全迁移" };
+  if (compareSaveVersion(incoming, current) > 0)
+    return { ok: false, reason: "这是更高版本存档，请使用新版本游戏读取" };
+  if (data.level !== undefined && (!Number.isFinite(Number(data.level)) || Number(data.level) < 1))
+    return { ok: false, reason: "角色等级字段损坏" };
+  if (data.inventory !== undefined && !Array.isArray(data.inventory))
+    return { ok: false, reason: "装备背包字段损坏" };
+  if (data.pets !== undefined && !Array.isArray(data.pets))
+    return { ok: false, reason: "宠物字段损坏" };
+  if (data.started && typeof data.mapId !== "string")
+    return { ok: false, reason: "地图字段损坏" };
+  return { ok: true };
+}
+function parseValidatedSave(raw) {
+  try {
+    const data = JSON.parse(raw || "null"), checked = validateSaveData(data);
+    return checked.ok ? { data, raw } : { data: null, raw, error: checked.reason };
+  } catch (_) {
+    return { data: null, raw, error: "JSON内容损坏" };
+  }
+}
 function clamp(v, a, b) {
   return Math.max(a, Math.min(b, v));
 }
@@ -3142,7 +3202,7 @@ function equippedBonuses() {
   Object.values(state.equipment)
     .filter(Boolean)
     .forEach((it) => {
-      const mult = 1 + (it.refine || 0) * 0.08;
+      const mult = refineMultiplier(it);
       Object.entries(it.stats).forEach(
         ([k, v]) => (b[k] = (b[k] || 0) + Math.round(v * mult)),
       );
@@ -3967,7 +4027,7 @@ function refineCost(it) {
 
 /* ===== core-08.js ===== */
 function itemText(it) {
-  const mult = 1 + (it.refine || 0) * 0.08,
+  const mult = refineMultiplier(it),
     tier = inferItemTier(it),
     names = {
       str: "力量",
@@ -5011,6 +5071,10 @@ function playerAttack() {
         (rt.bossDamage || 0)
       : 1,
     baseIgnore = clamp((psv.ignoreDef || 0) + (rt.ignoreDef || 0), 0, 0.55);
+  if (typeof window.alpha044AttackEvaded === "function" && window.alpha044AttackEvaded(e, sid, "hero")) {
+    log(`${e.name}闪避了普通攻击；主动技能与破绽攻击不受本次闪避影响。`, "lose", "defense");
+    return;
+  }
   if (!sid) {
     const companionBuff =
       (state.temp?.petAtkBuffTurns || 0) > 0
@@ -5129,6 +5193,8 @@ function enemyAttack() {
     ps = p ? petStats(p) : null;
   if (!e) return;
   e.round = (e.round || 0) + 1;
+  if (typeof window.alpha044OnEnemyRound === "function")
+    window.alpha044OnEnemyRound(e);
   if (e.bossPrefixMechanic === "ward" && e.round % 4 === 0) {
     e.shield = 1;
     log(`${e.name}展开藏宝护盾，下一次受到的伤害降低。`, "lose", "defense");
@@ -5204,7 +5270,10 @@ function enemyAttack() {
     speciesWeak =
       (e.speciesWeakenTurns || 0) > 0 ? 1 - (e.speciesWeakenPower || 0.2) : 1,
     frostWeak = (e.frostbiteTurns || 0) > 0 ? 1 - (e.frostbitePower || 0.1) : 1,
-    enemyAtk = e.atk * genericWeak * speciesWeak * frostWeak,
+    ecologyAtk = typeof window.alpha044EnemyAttackMultiplier === "function"
+      ? window.alpha044EnemyAttackMultiplier(e)
+      : 1,
+    enemyAtk = e.atk * genericWeak * speciesWeak * frostWeak * ecologyAtk,
     pAlive = petAlive(p),
     heroAlive = playerAlive();
   let petTargetChance = 0;
@@ -5320,6 +5389,10 @@ function petTurn() {
   const ps = petStats(p),
     s = stats();
   p.battleTurns = (p.battleTurns || 0) + 1;
+  if (typeof window.alpha044AttackEvaded === "function" && window.alpha044AttackEvaded(e, null, "pet")) {
+    log(`${e.name}避开了${p.name}的协击。`, "lose", "defense");
+    return;
+  }
   const speciesMult = petSpeciesDamageMult(p, e);
   petSpeciesSpecial(p, e, ps, s);
   if (e.hp <= 0) return;
@@ -6017,18 +6090,23 @@ function expandPetCapacity() {
 function refineItem(id) {
   const it = findItem(id);
   if (!it) return;
-  if ((it.refine || 0) >= 5) return alert("Alpha阶段精炼上限为+5。");
+  const max = refineMaxLevel(it);
+  if ((it.refine || 0) >= max) return alert(`${SLOT_NAMES[it.slot]}精炼上限为+${max}。`);
   const cost = refineCost(it);
   if (state.gold < cost) return alert(`金币不足，需要${cost}。`);
   state.gold -= cost;
   it.refine = (it.refine || 0) + 1;
-  log(`${it.name}精炼至+${it.refine}，金币-${cost}。`, "loot");
+  log(`${it.name}精炼至+${it.refine}，总属性提升${refineBonusPct(it)}%，金币-${cost}。`, "loot");
+  save();
   render();
 }
 function save() {
   try {
     state.lastSave = Date.now();
-    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+    const next = JSON.stringify(state), current = localStorage.getItem(SAVE_KEY);
+    if (current && current !== next && parseValidatedSave(current).data)
+      localStorage.setItem(SAFE_BACKUP_KEY, current);
+    localStorage.setItem(SAVE_KEY, next);
   } catch {}
 }
 const SAVE_SLOT_PREFIX = "bwe-core-manual-slot-";
@@ -6074,11 +6152,13 @@ function importSaveFile(input) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const d = JSON.parse(reader.result);
-      if (!d || !d.version) throw new Error("格式错误");
+      const parsed = parseValidatedSave(reader.result);
+      if (!parsed.data) throw new Error(parsed.error || "格式错误");
       if (!confirm("导入这个存档并覆盖当前自动存档？")) return;
-      d.version = VERSION;
-      localStorage.setItem(SAVE_KEY, JSON.stringify(d));
+      const current = localStorage.getItem(SAVE_KEY);
+      if (current && parseValidatedSave(current).data)
+        localStorage.setItem(SAFE_BACKUP_KEY, current);
+      localStorage.setItem(SAVE_KEY, parsed.raw);
       location.reload();
     } catch (e) {
       alert("无法导入：" + e.message);
@@ -6086,8 +6166,24 @@ function importSaveFile(input) {
   };
   reader.readAsText(file);
 }
+function safeBackupInfo() {
+  const parsed = parseValidatedSave(localStorage.getItem(SAFE_BACKUP_KEY));
+  if (!parsed.data) return "暂无可用安全备份";
+  const d = parsed.data;
+  return `${RACES[d.race]?.name || "未选择种族"}·${STYLES[d.style]?.name || "未选择职业"} Lv.${d.level || 1}｜${new Date(d.lastSave || 0).toLocaleString()}`;
+}
+function restoreSafeBackup() {
+  const raw = localStorage.getItem(SAFE_BACKUP_KEY), parsed = parseValidatedSave(raw);
+  if (!parsed.data) return alert("没有可恢复的安全备份。请改用JSON导入。 ");
+  if (!confirm("恢复上一份安全备份？当前自动存档会先被保留为新的安全备份。")) return;
+  const current = localStorage.getItem(SAVE_KEY);
+  if (current && parseValidatedSave(current).data)
+    localStorage.setItem(SAFE_BACKUP_KEY, current);
+  localStorage.setItem(SAVE_KEY, raw);
+  location.reload();
+}
 function compactItemText(it) {
-  const mult = 1 + (it.refine || 0) * 0.08,
+  const mult = refineMultiplier(it),
     names = {
       str: "力",
       int: "智",
@@ -6126,12 +6222,13 @@ function miniDetail(title, body) {
     : `<details class="mini"><summary>${title}</summary><div class="help-body">${body}</div></details>`;
 }
 function renderSaves() {
-  return `<div class="card"><h3>存档</h3><p>最后保存：${new Date(state.lastSave || Date.now()).toLocaleString()}</p><button onclick="save();alert('已保存。');render()">立即保存</button></div><div class="card" style="margin-top:10px"><h3>本地槽位</h3>${[1, 2, 3].map((n) => `<div class="item"><div><b>槽位${n}</b><div class="compact-meta">${slotInfo(n)}</div></div><div class="controls"><button onclick="saveSlot(${n})">保存</button><button onclick="loadSlot(${n})">读取</button></div></div>`).join("")}</div><div class="card" style="margin-top:10px"><h3>备份</h3><button onclick="exportSave()">导出JSON</button><label class="button" style="display:inline-block;margin-left:8px">导入JSON <input type="file" accept="application/json,.json" onchange="importSaveFile(this)" style="display:none"></label></div>${helpBlock("PWA与存档说明", `<b>${pwaInstallStatus()}</b><br>游戏每10秒自动保存到当前浏览器/主屏幕App。换手机、清理Safari数据或换浏览器前建议导出JSON。<br><br><button onclick="installPwa()">安装到主屏幕 / 查看方法</button>`)}`;
+  return `<div class="card save-primary"><h3>存档安全</h3><p>最后保存：${new Date(state.lastSave || Date.now()).toLocaleString()}</p><div class="controls"><button onclick="save();alert('已安全保存。');render()">立即保存</button><button onclick="exportSave()">导出JSON备份</button><label class="button">导入JSON <input type="file" accept="application/json,.json" onchange="importSaveFile(this)" style="display:none"></label></div><div class="compact-meta">建议每次更新游戏或更换设备前导出一次。导入前会核验版本与关键字段，不会直接篡改版本号。</div></div><div class="card" style="margin-top:10px"><h3>自动安全备份</h3><div class="compact-meta">${safeBackupInfo()}</div><div class="controls"><button onclick="restoreSafeBackup()">恢复上一份安全备份</button></div><div class="compact-meta">每次覆盖主存档前自动保留上一份有效存档；主档损坏时启动也会优先尝试恢复。</div></div><div class="card" style="margin-top:10px"><h3>本地槽位</h3>${[1, 2, 3].map((n) => `<div class="item"><div><b>槽位${n}</b><div class="compact-meta">${slotInfo(n)}</div></div><div class="controls"><button onclick="saveSlot(${n})">保存</button><button onclick="loadSlot(${n})">读取</button></div></div>`).join("")}</div>${helpBlock("PWA与存档说明", `<b>${pwaInstallStatus()}</b><br>游戏每10秒自动保存到当前浏览器/主屏幕App。换手机、清理Safari数据或换浏览器前必须先导出JSON。<br><br><button onclick="installPwa()">安装到主屏幕 / 查看方法</button>`)}`;
 }
 function load() {
   try {
-    const raw =
-      localStorage.getItem(SAVE_KEY) ||
+    const candidates = [
+      localStorage.getItem(SAVE_KEY),
+      localStorage.getItem(SAFE_BACKUP_KEY),
       localStorage.getItem(ALPHA040_SAVE_KEY) ||
       localStorage.getItem(ALPHA033_SAVE_KEY) ||
       localStorage.getItem(ALPHA032_SAVE_KEY) ||
@@ -6163,46 +6260,13 @@ function load() {
       localStorage.getItem(OLDER_SAVE_KEY) ||
       localStorage.getItem(OLDEST_SAVE_KEY) ||
       localStorage.getItem(ANCIENT_SAVE_KEY) ||
-      localStorage.getItem(PRIMITIVE_SAVE_KEY);
-    if (!raw) return false;
-    const d = JSON.parse(raw);
-    if (
-      ![
-        "0.3.0",
-        "0.4.0",
-        "0.5.0",
-        "0.6.0",
-        "0.7.0",
-        "0.8.0",
-        "0.9.0",
-        "0.10.0",
-        "0.11.0",
-        "0.12.0",
-        "0.13.0",
-        "0.14.0",
-        "0.15.0",
-        "0.16.0",
-        "0.17.0",
-        "0.18.0",
-        "0.19.0",
-        "0.20.0",
-        "0.21.0",
-        "0.22.0",
-        "0.23.0",
-        "0.24.0",
-        "0.25.0",
-        "0.26.0",
-        "0.27.0",
-        "0.28.0",
-        "0.29.0",
-        "0.30.0",
-        "0.31.0",
-        "0.32.0",
-        "0.33.0",
-        VERSION,
-      ].includes(d.version)
-    )
-      return false;
+      localStorage.getItem(PRIMITIVE_SAVE_KEY),
+    ].filter(Boolean);
+    const selected = candidates.map(parseValidatedSave).find((x) => x.data);
+    if (!selected) return false;
+    const d = selected.data;
+    if (selected.raw !== localStorage.getItem(SAVE_KEY))
+      localStorage.setItem(SAVE_KEY, selected.raw);
     state = d;
     state.version = VERSION;
     state.name = sanitizePlayerName(state.name);
@@ -6245,7 +6309,17 @@ function load() {
       byMap: {},
     };
     state.metrics.byMap = state.metrics.byMap || {};
+    state.bossProgress = state.bossProgress || {};
     state.bossCycles = state.bossCycles || {};
+    state.equipment = {
+      weapon: null,
+      head: null,
+      armor: null,
+      boots: null,
+      ring: null,
+      amulet: null,
+      ...(state.equipment || {}),
+    };
     state.skillUse = state.skillUse || {};
     state.skills = state.skills || {};
     state.skillMastered = state.skillMastered || {};
@@ -6258,7 +6332,7 @@ function load() {
     });
     state.petDust = state.petDust || 0;
     state.petCapacity = state.petCapacity || 12;
-    state.inventoryCapacity = state.inventoryCapacity || 40;
+    state.inventoryCapacity = Math.max(120, Number(state.inventoryCapacity || 0));
     state.gearScorePrefs = state.gearScorePrefs || null;
     ensureGearScorePrefs();
     state.rebirthLaws = {
@@ -6333,7 +6407,7 @@ function load() {
         : Math.max(1, Number(i.tier || i.itemLevel || 1));
       i.itemLevel = i.tier;
       i.score = gearTierScore(i.tier, i.rarity);
-      if (i.qualityCurveVersion !== 4) {
+      if (Number(i.qualityCurveVersion || 0) < 5) {
         const ratio = Math.max(0.55, i.score / oldScore);
         Object.keys(i.stats || {}).forEach(
           (k) => (i.stats[k] = Math.max(1, Math.round(i.stats[k] * ratio))),
@@ -6344,7 +6418,7 @@ function load() {
         i.sell || 0,
         Math.round((8 + i.score * 0.18) * (1 + i.rarity * 0.45)),
       );
-      i.qualityCurveVersion = 5;
+      i.qualityCurveVersion = Math.max(5, Number(i.qualityCurveVersion || 0));
     };
     state.inventory = state.inventory || [];
     state.inventory.forEach(migrateItem);
@@ -6452,7 +6526,7 @@ load = function () {
         localStorage.setItem(SAVE_KEY, JSON.stringify(d));
       }
     }
-    const candidate = JSON.parse(localStorage.getItem(SAVE_KEY) || "null");
+    const candidate = parseValidatedSave(localStorage.getItem(SAVE_KEY)).data;
     if (
       ["0.34.0", "0.35.0", "0.36.0", "0.37.0", "0.38.0", "0.39.0"].includes(
         candidate?.version,
@@ -6524,7 +6598,7 @@ resetGame = function () {
 /* ===== core-13.js ===== */
 function renderStart() {
   const app = document.getElementById("app");
-  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.42</h1><p class="subtitle">终身伙伴 · 世界难度 · 自动打宝 · 构筑突破</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
+  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.45</h1><p class="subtitle">五分钟做构筑 · 全天自动刷宝</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
     (id) => {
       const r = RACES[id];
       return `<div class="choice race" data-id="${id}" onclick="selectStart('race','${id}')"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">${r.traitName}：${r.traitDesc}</div>${miniDetail("属性倍率", identityGrowthText(r))}</div>`;
@@ -6678,14 +6752,14 @@ function render(preserveUi = true) {
     e = state.enemy,
     p = activePet();
   document.getElementById("app").innerHTML =
-    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.42</h1><div class="subtitle">终身伙伴 · 世界难度 · 自动打宝 · 构筑突破</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
+    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.45</h1><div class="subtitle">五分钟做构筑 · 全天自动刷宝</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
       .map(
         (x) =>
           `<div class="${x.cls} cat-${x.category || inferLogCategory(x.msg, x.cls)}">${x.msg}</div>`,
       )
       .join(
-        "",
-      )}</div></div><div class="layout"><div class="panel battle-panel-wrap"><div class="panel-title">战斗永不停歇</div><div id="battle-panel"></div><div class="controls" style="padding:0 7px 7px"><button onclick="state.running=!state.running;render()">${state.running ? "暂停战斗" : "继续战斗"}</button></div></div><div class="panel main-panel"><div class="tabs">${[
+      "",
+      )}</div></div><div class="layout"><div class="panel battle-panel-wrap"><div class="panel-title">战斗永不停歇</div><div id="battle-panel"></div><div class="controls battle-speed-controls" style="padding:0 7px 7px">${typeof window.renderAlpha043BattleControls === "function" ? window.renderAlpha043BattleControls() : `<button onclick="state.running=!state.running;render()">${state.running ? "暂停战斗" : "继续战斗"}</button>`}</div></div><div class="panel main-panel"><div class="tabs">${[
       ["character", "角色"],
       ["skills", "技能"],
       ["inventory", "装备"],
@@ -6699,7 +6773,7 @@ function render(preserveUi = true) {
       )
       .join(
         "",
-      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.42：装备成长、地图定向与构筑统计。</div></div>`;
+      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.45：终身伙伴、变异觉醒与长期图鉴。</div></div>`;
   mainContentDirty = false;
   updateResourceBar();
   renderBattleOnly();
@@ -6714,7 +6788,7 @@ function renderBattleOnly() {
     e = state.enemy,
     p = activePet(),
     ps = p ? petStats(p) : null;
-  el.innerHTML = `<div class="battle"><div class="combatant ${playerAlive() ? "" : "party-down"}"><div class="name-row"><span class="big-name">${RACES[state.race].icon}${state.name} Lv.${state.level}</span><span class="badge">${STYLES[state.style].name}</span></div><div class="bar"><div class="fill hp" style="width:${clamp((state.hp / s.maxHp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(state.hp))}/${s.maxHp}</span></div><div class="bar"><div class="fill mp" style="width:${clamp((state.mp / s.maxMp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(state.mp))}/${s.maxMp}</span></div><div class="stats-mini"><div>攻击 ${s.atk}</div><div>防御 ${s.def}</div><div>速度 ${s.speed}</div></div></div>${p ? `<div class="combatant ${petAlive(p) ? "" : "party-down"}"><div class="name-row"><span class="big-name">${petSpeciesIcon(p)}${p.tier || 1}阶 ${p.mutant ? '<span class="mutant-x">变异 X</span> ' : ""}${p.name} Lv.${p.level}</span><span class="badge">${PET_TYPES[p.type].name} · ${petOverallGrade(p)}</span></div><div class="bar"><div class="fill hp" style="width:${clamp(((p.hp || 0) / ps.maxHp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(p.hp || 0))}/${ps.maxHp}</span></div><div class="stats-mini"><div>攻击 ${ps.atk}</div><div>防御 ${ps.def}</div><div>魔力 ${ps.magic}</div></div><div class="muted" style="margin-top:6px">${petRoleStatus(p)}</div></div>` : '<div class="combatant"><div class="muted">尚未获得出战宠物。区域Boss可能掉落宠物。</div></div>'}<div class="combatant"><div class="name-row"><span class="big-name">${e ? e.name : "寻找敌人"} ${e ? "Lv." + e.level : ""}</span><span class="badge">${e ? `CP ${e.cp} · 威胁T${e.threatTier || 0}` : ""}</span></div><div class="bar"><div class="fill hp" style="width:${e ? clamp((e.hp / e.maxHp) * 100, 0, 100) : 0}%"></div><span>${e ? Math.max(0, Math.round(e.hp)) + "/" + e.maxHp : ""}</span></div><div class="stats-mini"><div>攻击 ${e?.atk || 0}</div><div>防御 ${e?.def || 0}</div><div>速度 ${e?.speed || 0}</div></div>${e?.treasure ? '<div class="compact-meta" style="margin-top:6px"><b>稀有宝箱怪：</b>基础金币×100</div>' : e?.bossPrefixId && e.bossPrefixId !== "none" ? `<div class="compact-meta" style="margin-top:6px"><b>${e.bossPrefixName}前缀：</b>${e.bossPrefixDesc} 金币×${Number(e.bossGoldMult || 1).toFixed(2)}</div>` : ""}${(e?.petArmorBreakTurns || 0) > 0 || (e?.petWeakenTurns || 0) > 0 || (e?.skillArmorBreakTurns || 0) > 0 ? `<div class="muted" style="margin-top:6px">${(e.petArmorBreakTurns || 0) > 0 ? "宠物破甲 " : ""}${(e.petWeakenTurns || 0) > 0 ? "衰弱 " : ""}${(e.skillArmorBreakTurns || 0) > 0 ? "蚀骨破甲" : ""}</div>` : ""}</div>${renderDefeatReport()}</div>`;
+  el.innerHTML = `<div class="battle"><div class="combatant ${playerAlive() ? "" : "party-down"}"><div class="name-row"><span class="big-name">${RACES[state.race].icon}${state.name} Lv.${state.level}</span><span class="badge">${STYLES[state.style].name}</span></div><div class="bar"><div class="fill hp" style="width:${clamp((state.hp / s.maxHp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(state.hp))}/${s.maxHp}</span></div><div class="bar"><div class="fill mp" style="width:${clamp((state.mp / s.maxMp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(state.mp))}/${s.maxMp}</span></div><div class="stats-mini"><div>攻击 ${s.atk}</div><div>防御 ${s.def}</div><div>速度 ${s.speed}</div></div></div>${p ? `<div class="combatant ${petAlive(p) ? "" : "party-down"}"><div class="name-row"><span class="big-name">${petSpeciesIcon(p)}${p.tier || 1}阶 ${p.mutant ? '<span class="mutant-x">变异 X</span> ' : ""}${p.name} Lv.${p.level}</span><span class="badge">${PET_TYPES[p.type].name} · ${petOverallGrade(p)}</span></div><div class="bar"><div class="fill hp" style="width:${clamp(((p.hp || 0) / ps.maxHp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(p.hp || 0))}/${ps.maxHp}</span></div><div class="stats-mini"><div>攻击 ${ps.atk}</div><div>防御 ${ps.def}</div><div>魔力 ${ps.magic}</div></div><div class="muted" style="margin-top:6px">${petRoleStatus(p)}</div></div>` : '<div class="combatant"><div class="muted">尚未获得出战宠物。区域Boss可能掉落宠物。</div></div>'}<div class="combatant"><div class="name-row"><span class="big-name">${e ? e.name : "寻找敌人"} ${e ? "Lv." + e.level : ""}</span><span class="badge">${e ? `${e.ecologyIcon || ""}${e.ecologyName ? ` ${e.ecologyName} ·` : ""} CP ${e.cp} · 威胁T${e.threatTier || 0}` : ""}</span></div><div class="bar"><div class="fill hp" style="width:${e ? clamp((e.hp / e.maxHp) * 100, 0, 100) : 0}%"></div><span>${e ? Math.max(0, Math.round(e.hp)) + "/" + e.maxHp : ""}</span></div><div class="stats-mini"><div>攻击 ${e?.atk || 0}</div><div>防御 ${e?.def || 0}</div><div>速度 ${e?.speed || 0}</div></div>${e?.ecologyDesc ? `<div class="compact-meta ecology-status-044"><b>${e.ecologyIcon} ${e.ecologyName}：</b>${e.ecologyDesc}</div>` : ""}${e?.treasure ? '<div class="compact-meta" style="margin-top:6px"><b>稀有宝箱怪：</b>基础金币×100</div>' : e?.bossPrefixId && e.bossPrefixId !== "none" ? `<div class="compact-meta" style="margin-top:6px"><b>${e.bossPrefixName}前缀：</b>${e.bossPrefixDesc} 金币×${Number(e.bossGoldMult || 1).toFixed(2)}</div>` : ""}${(e?.petArmorBreakTurns || 0) > 0 || (e?.petWeakenTurns || 0) > 0 || (e?.skillArmorBreakTurns || 0) > 0 ? `<div class="muted" style="margin-top:6px">${(e.petArmorBreakTurns || 0) > 0 ? "宠物破甲 " : ""}${(e.petWeakenTurns || 0) > 0 ? "衰弱 " : ""}${(e.skillArmorBreakTurns || 0) > 0 ? "蚀骨破甲" : ""}</div>` : ""}</div>${renderDefeatReport()}</div>`;
   renderLogOnly();
 }
 
@@ -6844,11 +6918,11 @@ function renderInventory() {
             `<option value="${id}" ${selected === id ? "selected" : ""}>${n}</option>`,
         )
         .join("")}`;
-  return `<div class="grid2"><div class="card"><h3>评分偏好</h3><p>核心 <select onchange="setGearScorePref('primary',this.value)">${statOptions(prefs.primary)}</select></p><p>次要 <select onchange="setGearScorePref('secondary',this.value)">${statOptions(prefs.secondary)}</select></p><p>辅助 <select onchange="setGearScorePref('tertiary',this.value)">${statOptions(prefs.tertiary)}</select></p><button onclick="resetGearScorePrefs()">恢复职业默认</button></div><div class="card"><h3>背包处理</h3><select onchange="state.autoSell=Number(this.value);save()">${RARITIES.map((r, i) => `<option value="${i}" ${state.autoSell === i ? "selected" : ""}>保留${r.name}及以上</option>`).join("")}</select><p>背包 ${state.inventory.length}/${state.inventoryCapacity}</p><button onclick="sellNonUpgradeItems()">出售无提升装备</button></div></div>${helpBlock("装备评分与项链秘仪说明", `装备允许重复普通词条，因此可能出现全暴击、全敏捷等极品。评分按当前职业与偏好判断适配度。<br><br><b>项链秘仪：</b>时间折叠、猎手罗盘、血契、超限视界、咒术共鸣、血脉共振、首领猎印。秘仪只出现在项链。`)}<div class="card"><h3>当前装备</h3>${SLOTS.map(
+  return `<div class="grid2"><div class="card"><h3>评分偏好</h3><p>核心 <select onchange="setGearScorePref('primary',this.value)">${statOptions(prefs.primary)}</select></p><p>次要 <select onchange="setGearScorePref('secondary',this.value)">${statOptions(prefs.secondary)}</select></p><p>辅助 <select onchange="setGearScorePref('tertiary',this.value)">${statOptions(prefs.tertiary)}</select></p><button onclick="resetGearScorePrefs()">恢复职业默认</button></div>${typeof window.renderAlpha043LootAutomation === "function" ? window.renderAlpha043LootAutomation() : `<div class="card"><h3>背包处理</h3><p>背包 ${state.inventory.length}/${state.inventoryCapacity}</p><button onclick="sellNonUpgradeItems()">出售无提升装备</button></div>`}</div>${helpBlock("装备评分与项链秘仪说明", `装备允许重复普通词条，因此可能出现全暴击、全敏捷等极品。评分按当前职业与偏好判断适配度。<br><br><b>项链秘仪：</b>时间折叠、猎手罗盘、血契、超限视界、咒术共鸣、血脉共振、首领猎印。秘仪只出现在项链。`)}<div class="card"><h3>当前装备</h3>${SLOTS.map(
     (slot) => {
       const it = state.equipment[slot],
         fit = it ? gearFitLabel(it) : null;
-      return `<div class="item ${itemVisualClass(it)}"><div><b class="equip-slot-label">${SLOT_NAMES[slot]}</b>：${it ? `<span class="${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}` : "空"}</div>${it ? `<div class="controls"><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= 5 ? "disabled" : ""}>精炼</button><button onclick="unequip('${slot}')">卸下</button></div>` : ""}</div>`;
+      return `<div class="item ${itemVisualClass(it)}"><div><b class="equip-slot-label">${SLOT_NAMES[slot]}</b>：${it ? `<span class="${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}` : "空"}</div>${it ? `<div class="controls"><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= refineMaxLevel(it) ? "disabled" : ""}>精炼${it.slot === "weapon" ? ` +${it.refine || 0}/10` : ""}</button><button onclick="unequip('${slot}')">卸下</button></div>` : ""}</div>`;
     },
   ).join("")}</div><div class="card" style="margin-top:10px"><h3>背包</h3>${
     ordered
@@ -6857,7 +6931,7 @@ function renderInventory() {
           delta = inventoryUpgradeDelta(it),
           positive = delta > 0,
           fit = gearFitLabel(it);
-        return `<div class="item ${itemVisualClass(it)}"><div><span class="item-name ${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · ${SLOT_NAMES[it.slot]} · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div><div class="compare ${positive ? "risk-safe" : "muted"}">${positive ? `提升 +${delta}` : `无提升 ${delta}`}${old ? `｜当前${itemScore(old)}` : ""}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}</div><div class="controls"><button onclick="equipItem('${it.id}')">装备</button><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= 5 ? "disabled" : ""}>精炼</button><button onclick="state.inventory.find(x=>x.id==='${it.id}').locked=!state.inventory.find(x=>x.id==='${it.id}').locked;render()">${it.locked ? "解锁" : "锁定"}</button><button ${it.locked ? "disabled" : ""} onclick="sellItem('${it.id}')">出售${itemSellValue(it)}</button></div></div>`;
+        return `<div class="item ${itemVisualClass(it)}"><div><span class="item-name ${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · ${SLOT_NAMES[it.slot]} · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div><div class="compare ${positive ? "risk-safe" : "muted"}">${positive ? `提升 +${delta}` : `无提升 ${delta}`}${old ? `｜当前${itemScore(old)}` : ""}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}</div><div class="controls"><button onclick="equipItem('${it.id}')">装备</button><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= refineMaxLevel(it) ? "disabled" : ""}>精炼${it.slot === "weapon" ? ` +${it.refine || 0}/10` : ""}</button><button onclick="state.inventory.find(x=>x.id==='${it.id}').locked=!state.inventory.find(x=>x.id==='${it.id}').locked;render()">${it.locked ? "解锁" : "锁定"}</button><button ${it.locked ? "disabled" : ""} onclick="sellItem('${it.id}')">出售${itemSellValue(it)}</button></div></div>`;
       })
       .join("") || '<div class="muted">尚无装备。</div>'
   }</div>`;
@@ -6896,7 +6970,7 @@ function renderPets() {
     )
     .join(
       "",
-    )}</select></label><p><label>最低资质 <select onchange="state.petFilter.minGrade=this.value;save()">${PET_GRADES.map((g) => `<option value="${g}" ${f.minGrade === g ? "selected" : ""}>${g}</option>`).join("")}</select></label></p><p><label>处理 <select onchange="state.petFilter.action=this.value;save()"><option value="release" ${f.action === "release" ? "selected" : ""}>放归换精华</option><option value="feed" ${f.action === "feed" ? "selected" : ""}>转化经验</option></select></label></p><label><input type="checkbox" ${f.keepAnyS ? "checked" : ""} onchange="state.petFilter.keepAnyS=this.checked;save()"> 单项S以上保留</label></div><div class="card"><h3>仓库</h3><p>攻击 ${counts.Attack}｜防御 ${counts.Defense}｜施法 ${counts.Magic}｜平衡 ${counts.Balance}</p><p>变异X：<span class="mutant-x">${mutants}</span>｜总数 ${state.pets.length}/${state.petCapacity}</p></div></div><div class="card" style="margin-top:10px"><h3>宠物</h3>${
+    )}</select></label><p><label>最低资质 <select onchange="state.petFilter.minGrade=this.value;save()">${PET_GRADES.map((g) => `<option value="${g}" ${f.minGrade === g ? "selected" : ""}>${g}</option>`).join("")}</select></label></p><p><label>处理 <select onchange="state.petFilter.action=this.value;save()"><option value="release" ${f.action === "release" ? "selected" : ""}>放归换精华</option><option value="feed" ${f.action === "feed" ? "selected" : ""}>转化经验</option></select></label></p><label><input type="checkbox" ${f.keepAnyS ? "checked" : ""} onchange="state.petFilter.keepAnyS=this.checked;save()"> 单项S以上保留</label></div><div class="card"><h3>仓库</h3><p>攻击 ${counts.Attack}｜防御 ${counts.Defense}｜施法 ${counts.Magic}｜平衡 ${counts.Balance}</p><p>变异X：<span class="mutant-x">${mutants}</span>｜已拥有 ${state.pets.length}只｜容量 ${state.petCapacity}只</p></div></div><div class="card" style="margin-top:10px"><h3>宠物</h3>${
     state.pets
       .slice()
       .sort((a, b) => petKeepScore(b) - petKeepScore(a))
@@ -6946,7 +7020,7 @@ function renderMaps() {
           : "—",
         cycle = ensureBossCycle(m.id),
         d = dangerDropProfile(m.id);
-      return `<div class="map-card ${state.mapId === m.id ? "selected" : ""}"><div class="map-head"><b>${m.name} · T${cycle.threatTier || 0}/${threatCapText(m.id)}</b><span class="${risk[1]}">${risk[0]} · CP ${effective}</span></div><div class="compact-meta">Lv.${m.levels[0]}—${m.levels[1]} · 装备${m.gearTier}阶 · 宠物${m.petTier}阶 · 预计胜率${estimatedWin(m)}% · 实际${actual}</div><div class="compact-meta">${bossEncounterText(m.id)}${bp ? ` · Boss ${Math.round(bp.hp)}/${bp.maxHp}` : ""} · 击败${cycle.bossWins}次</div>${miniDetail("地图详情", `基准CP ${m.cp}｜角色/地图CP比×${ratio.toFixed(2)}｜失败压力 ${(cycle.dangerFail || 0).toFixed(1)}/3<br>怪物：${m.monsters.join("、")}｜Boss：${m.boss}<br>掉落：装备×${d.gearDrop.toFixed(2)}｜Boss宠物×${d.petDrop.toFixed(2)}｜神话×${d.mythic.toFixed(2)}｜变异X×${d.mutation.toFixed(2)}`)}<div class="controls"><button ${state.mapId === m.id ? "disabled" : ""} onclick="changeMap('${m.id}')">前往</button></div></div>`;
+      return `<div class="map-card ${state.mapId === m.id ? "selected" : ""}"><div class="map-head"><b>${m.name} · T${cycle.threatTier || 0}/${threatCapText(m.id)}</b><span class="${risk[1]}">${risk[0]} · CP ${effective}</span></div><div class="compact-meta">${m.ecologySummary ? `生态：${m.ecologySummary} · ` : ""}Lv.${m.levels[0]}—${m.levels[1]} · 装备${m.gearTier}阶 · 宠物${m.petTier}阶 · 预计胜率${estimatedWin(m)}% · 实际${actual}</div><div class="compact-meta">${bossEncounterText(m.id)}${bp ? ` · Boss ${Math.round(bp.hp)}/${bp.maxHp}` : ""} · 击败${cycle.bossWins}次</div>${miniDetail("地图详情", `基准CP ${m.cp}｜角色/地图CP比×${ratio.toFixed(2)}｜失败压力 ${(cycle.dangerFail || 0).toFixed(1)}/3<br>${m.ecologyAdvice ? `<b>生态应对：</b>${m.ecologyAdvice}<br>` : ""}怪物：${m.monsters.join("、")}｜Boss：${m.boss}<br>掉落：装备×${d.gearDrop.toFixed(2)}｜Boss宠物×${d.petDrop.toFixed(2)}｜神话×${d.mythic.toFixed(2)}｜变异X×${d.mutation.toFixed(2)}`)}<div class="controls"><button ${state.mapId === m.id ? "disabled" : ""} onclick="changeMap('${m.id}')">前往</button></div></div>`;
     },
   ).join("")}`;
 }

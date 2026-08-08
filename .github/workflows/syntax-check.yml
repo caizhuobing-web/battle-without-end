@@ -1,4 +1,4 @@
-name: Alpha 0.42 Regression Check
+name: Alpha 0.45 Lifelong Companion Gate
 on:
   push:
     branches: [main]

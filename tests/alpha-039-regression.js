@@ -5,7 +5,7 @@ const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-const SCRIPT_FILES = [...html.matchAll(/<script src="\.\/([^"?]+\.js)"/g)].map(
+const SCRIPT_FILES = [...html.matchAll(/<script src="\.\/([^"?]+\.js)(?:\?[^" ]+)?"/g)].map(
   (match) => match[1],
 );
 
@@ -146,6 +146,9 @@ test("all browser scripts parse and load in index order", () => {
     "game-features.js",
     "alpha-039-systems.js",
     "alpha-041-systems.js",
+    "alpha-043-systems.js",
+    "alpha-044-systems.js",
+    "alpha-045-systems.js",
     "background-progress.js",
   ]);
   createContext();
@@ -166,7 +169,7 @@ test("repository runtime has no historical shard or duplicate training files", (
   );
   assert(!names.includes("training-profile.js"));
   assert.strictEqual(
-    [...html.matchAll(/<link rel="stylesheet" href="\.\/([^"?]+\.css)"/g)]
+    [...html.matchAll(/<link rel="stylesheet" href="\.\/([^"?]+\.css)(?:\?[^" ]+)?"/g)]
       .length,
     1,
   );
@@ -413,7 +416,7 @@ test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level
       `JSON.stringify({version:state.version,hasSoul:Object.prototype.hasOwnProperty.call(state,'soul'),pet:state.pets[0]&&{tier:state.pets[0].tier,evolutionXp:state.pets[0].evolutionXp,level:state.pets[0].level,xp:state.pets[0].xp,baseSpecies:state.pets[0].baseSpecies,investment:state.pets[0].fusionInvestedXp}})`,
     ),
   );
-  assert.strictEqual(migrated.version, "0.42.0");
+  assert.strictEqual(migrated.version, "0.45.0");
   assert.strictEqual(migrated.hasSoul, false);
   assert.deepStrictEqual(
     {
@@ -446,7 +449,7 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
     ),
   );
   assert.deepStrictEqual(migrated, {
-    version: "0.42.0",
+    version: "0.45.0",
     guardian: true,
     inherited: 138,
     bossBuildPreset: null,
@@ -455,22 +458,135 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
   });
 });
 
-test("0.40 save migrates into a separate 0.41 key without overwriting the source", () => {
+test("0.40 save migrates all critical progress without overwriting the source", () => {
   const source = createContext();
-  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.40.0';d.started=true;d.race='human';d.style='melee';return JSON.stringify(d)})()`));
+  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.40.0';d.started=true;d.race='human';d.style='melee';d.level=73;d.xp=1234;d.gold=45678;d.worldDifficulty='expert';d.highestUnlockedDifficulty=4;d.inventory=[makeItem(1,null,3,false)];d.bossProgress={meadow:{active:true,hp:321,maxHp:999}};return JSON.stringify(d)})()`));
   const raw = JSON.stringify(oldSave);
   const context = createContext({ "bwe-core-alpha-040": raw });
-  const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,has041:!!localStorage.getItem('bwe-core-alpha-041'),source:localStorage.getItem('bwe-core-alpha-040')})`));
-  assert.strictEqual(result.version, "0.42.0");
+  const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,inventory:state.inventory.length,bossHp:state.bossProgress.meadow.hp,capacity:state.inventoryCapacity,has041:!!localStorage.getItem('bwe-core-alpha-041'),source:localStorage.getItem('bwe-core-alpha-040')})`));
+  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,inventory:result.inventory,bossHp:result.bossHp,capacity:result.capacity},{version:"0.45.0",level:73,xp:1234,gold:45678,difficulty:"expert",highest:4,inventory:1,bossHp:321,capacity:120});
   assert.strictEqual(result.has041, true);
   assert.strictEqual(result.source, raw);
 });
 
-test("background settlement replays the canonical battle tick without a parallel reward formula", () => {
+test("0.41 save under the stable key is accepted and migrated in place", () => {
+  const source = createContext();
+  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.41.0';d.started=true;d.level=88;d.xp=777;d.gold=65432;d.worldDifficulty='torment2';d.highestUnlockedDifficulty=5;delete d.bossState;d.inventoryCapacity=40;return JSON.stringify(d)})()`));
+  const context = createContext({ "bwe-core-alpha-041": JSON.stringify(oldSave) });
+  const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,bossState:state.bossState,capacity:state.inventoryCapacity})`));
+  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,capacity:result.capacity},{version:"0.45.0",level:88,xp:777,gold:65432,difficulty:"torment2",highest:5,capacity:120});
+  assert.deepStrictEqual(result.bossState, {});
+});
+
+test("0.42.1 save gains 0.43 idle and loot fields without losing progress", () => {
+  const seedContext = createContext();
+  const oldSave = evaluate(seedContext, `(()=>{const d=fresh();d.version='0.42.1';d.started=true;d.race='human';d.style='melee';d.unlockedRaces=['human'];d.unlockedClasses=['melee'];d.level=96;d.xp=4321;d.gold=76543;d.worldDifficulty='torment4';d.highestUnlockedDifficulty=7;delete d.battleSpeed;delete d.autoLoot;delete d.lootFeedback;delete d.lootHighlights;delete d.lastOfflineReport;return JSON.stringify(d)})()`);
+  const context = createContext({ "bwe-core-alpha-041": oldSave });
+  const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,speed:state.battleSpeed,autoLoot:state.autoLoot,feedback:state.lootFeedback,highlights:state.lootHighlights,lastOfflineReport:state.lastOfflineReport})`));
+  assert.deepStrictEqual(result, {
+    version: "0.45.0",
+    level: 96,
+    xp: 4321,
+    gold: 76543,
+    difficulty: "torment4",
+    highest: 7,
+    speed: 1,
+    autoLoot: { minRarity: 0, keepUpgrades: true },
+    feedback: { sound: false, haptics: true, reducedMotion: false },
+    highlights: [],
+    lastOfflineReport: null,
+  });
+});
+
+test("0.44 save migrates its active pet into the 0.45 lifelong companion model", () => {
+  const seedContext = createContext();
+  const oldSave = evaluate(seedContext, `(()=>{const d=fresh(),p=createPet('灰尾幼狼','Attack',0);d.version='0.44.0';d.started=true;d.level=111;d.gold=88888;p.id='legacy-main';p.level=57;p.tier=10;p.mutant=true;p.mutationTrait='bossbane';p.evolutionBranches={stage3:'assault',stage6:'apex'};delete p.initialBond;delete p.lifelongPath;d.pets=[p];d.activePetId=p.id;d.petCodex={'灰尾幼狼':12};delete d.petCodex045;return JSON.stringify(d)})()`);
+  const context = createContext({ "bwe-core-alpha-041": oldSave });
+  const result = JSON.parse(evaluate(context, `(()=>{const p=state.pets[0],r=state.petCodex045['灰尾幼狼'];return JSON.stringify({version:state.version,level:state.level,gold:state.gold,id:p.id,petLevel:p.level,tier:p.tier,name:p.name,initial:p.initialBond,locked:p.locked,mutation:p.mutationTrait,branch:p.evolutionBranches.stage6,found:r.found,highest:r.highestTier})})()`));
+  assert.deepStrictEqual(result, {
+    version: "0.45.0",
+    level: 111,
+    gold: 88888,
+    id: "legacy-main",
+    petLevel: 57,
+    tier: 10,
+    name: "血月猎王",
+    initial: true,
+    locked: true,
+    mutation: "bossbane",
+    branch: "apex",
+    found: 12,
+    highest: 10,
+  });
+});
+
+test("future-version saves are rejected instead of being parsed by an older build", () => {
+  const source = createContext();
+  const future = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='1.0.0';d.started=true;d.level=99;return JSON.stringify(d)})()`));
+  const context = createContext({ "bwe-core-alpha-041": JSON.stringify(future) });
+  const result = JSON.parse(evaluate(context, `JSON.stringify({started:state.started,level:state.level,version:state.version})`));
+  assert.deepStrictEqual(result, {started:false,level:1,version:"0.45.0"});
+});
+
+test("validated saves reject corrupt fields and never relabel future imports", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    const good=validateSaveData({version:'0.41.0',level:8,inventory:[],pets:[]});
+    const future=validateSaveData({version:'9.0.0',level:8,inventory:[],pets:[]});
+    const broken=validateSaveData({version:'0.41.0',level:8,inventory:{},pets:[]});
+    return JSON.stringify({good:good.ok,future:future.ok,futureReason:future.reason,broken:broken.ok});
+  })()`));
+  assert.strictEqual(result.good, true);
+  assert.strictEqual(result.future, false);
+  assert(result.futureReason.includes("更高版本"));
+  assert.strictEqual(result.broken, false);
+});
+
+test("each overwrite preserves the previous valid main save as a safety backup", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state=fresh();state.version=VERSION;state.level=17;state.inventory=[];state.pets=[];save();
+    const first=localStorage.getItem(SAVE_KEY);state.level=18;save();
+    const backup=JSON.parse(localStorage.getItem(SAFE_BACKUP_KEY));
+    return JSON.stringify({firstValid:!!parseValidatedSave(first).data,backupLevel:backup.level,mainLevel:JSON.parse(localStorage.getItem(SAVE_KEY)).level});
+  })()`));
+  assert.deepStrictEqual(result, { firstValid: true, backupLevel: 17, mainLevel: 18 });
+});
+
+test("a corrupt main save falls back to the last valid safety backup", () => {
+  const backup = {
+    version: "0.41.0", started: true, race: "human", style: "melee",
+    level: 26, xp: 123, gold: 456, mapId: "meadow", inventory: [], pets: [], equipment: {},
+  };
+  const context = createContext({
+    "bwe-core-alpha-041": "{broken-json",
+    "bwe-core-safe-backup-v1": JSON.stringify(backup),
+  });
+  const result = JSON.parse(evaluate(context, `(()=>{
+    const ok=load();return JSON.stringify({ok,level:state.level,xp:state.xp,gold:state.gold,version:state.version,mainValid:!!parseValidatedSave(localStorage.getItem(SAVE_KEY)).data});
+  })()`));
+  assert.deepStrictEqual(result, { ok: true, level: 26, xp: 123, gold: 456, version: "0.45.0", mainValid: true });
+});
+
+test("background settlement supports a 24-hour campaign without a parallel reward formula", () => {
   const source = read("background-progress.js");
   assert(source.includes("battleTick();"));
+  assert(source.includes("24 * 60 * 60 * 1000"));
+  assert(source.includes("alpha043ResolveOfflineBattle"));
   assert(!/state\.gold\s*[+\-*/]?=/.test(source));
   assert(!/receivePet\(|makeItem\(/.test(source));
+});
+
+test("0.43 exposes only reachable milestone goals and explains map focus precisely", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `JSON.stringify({goalIds:PROGRESSION_GOALS.map(x=>x.id),mapHtml:renderMaps(),starterSource:String(renderStart)})`));
+  assert(!result.goalIds.some((id) => id.startsWith("abyss_") || id === "threat_3" || id === "six_tier_six"));
+  assert(result.goalIds.includes("difficulty_expert"));
+  assert(result.goalIds.includes("level_140"));
+  assert(result.mapHtml.includes("提高概率，非限定掉落"));
+  assert(result.mapHtml.includes("不提高品质、阶级、属性或收益"));
+  assert(result.starterSource.includes('querySelector(".start .controls")'));
+  assert(result.starterSource.includes('insertAdjacentHTML("beforebegin", choices)'));
 });
 
 test("five permanent maps and fourteen global difficulties replace Abyss and rebirth scaling", () => {
@@ -651,19 +767,48 @@ test("world difficulty changes only by player choice and boss victories unlock w
   assert.deepStrictEqual(result, { afterLoss: "normal", current: "normal", highest: 1 });
 });
 
-test("ordinary map bosses cannot unlock difficulty and breakthrough bosses use a fixed template", () => {
+test("regional bosses require accumulated normal wins and unlock the next difficulty", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
     alpha041EnsureState();state.highestUnlockedDifficulty=0;state.worldDifficulty='normal';
-    onBattleWon({boss:true},map());const afterOrdinary=state.highestUnlockedDifficulty;
-    challengeDifficultyBoss();const e=makeEnemy(true);
-    return JSON.stringify({afterOrdinary,level:e.level,breakthrough:e.difficultyBreakthrough,prefix:e.bossPrefixId,name:e.name});
+    const c=ensureBossCycle(state.mapId),period=bossCycleConfig(state.mapId).period;
+    challengeDifficultyBoss();const afterManual=c.normalSinceBoss;
+    c.normalSinceBoss=period-1;state.enemy=null;ensureEnemy();const beforeBoss=state.enemy.boss;
+    state.enemy=null;c.normalSinceBoss=period;ensureEnemy();const e=state.enemy;
+    onBattleWon(e,map());
+    return JSON.stringify({period,afterManual,beforeBoss,boss:e.boss,breakthrough:e.difficultyBreakthrough,name:e.name,highest:state.highestUnlockedDifficulty});
   })()`));
-  assert.strictEqual(result.afterOrdinary, 0);
-  assert.strictEqual(result.level, 11);
+  assert.strictEqual(result.afterManual, 0);
+  assert.strictEqual(result.beforeBoss, false);
+  assert.strictEqual(result.boss, true);
   assert.strictEqual(result.breakthrough, true);
-  assert.strictEqual(result.prefix, "none");
-  assert(result.name.includes("世界突破"));
+  assert(result.name.includes("区域首领"));
+  assert.strictEqual(result.highest, 1);
+});
+
+test("threat rises on wins, falls on losses and T9 fixes ordinary enemies at band maximum", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    alpha041EnsureState();state.worldDifficulty='normal';const c=ensureBossCycle(state.mapId);
+    c.threatTier=0;c.threatUnlocked=0;
+    for(let i=0;i<9;i++) dangerRecordWin(c,false);
+    const atCap=threatTier(),levels=[];for(let i=0;i<30;i++)levels.push(makeEnemy(false).level);
+    dangerRecordLoss({boss:false},map(),c);
+    return JSON.stringify({atCap,unique:[...new Set(levels)],afterLoss:threatTier()});
+  })()`));
+  assert.strictEqual(result.atCap, 9);
+  assert.deepStrictEqual(result.unique, [10]);
+  assert.strictEqual(result.afterLoss, 8);
+});
+
+test("legacy unlimited pet capacity is migrated to a real visible capacity", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.petCapacity=9999;state.pets=[createPet('灰尾幼狼','Attack',0)];alpha041EnsureState();
+    state.tab='pets';const html=renderPets();
+    return JSON.stringify({capacity:state.petCapacity,label:html.includes('已拥有 1只｜容量 12只'),legacy:html.includes('/9999')});
+  })()`));
+  assert.deepStrictEqual(result, {capacity:12,label:true,legacy:false});
 });
 
 test("six build families and twelve named mythics are mythic-only rule changers", () => {
@@ -687,7 +832,7 @@ test("build cores produce distinct combat events instead of passive score multip
   const result = JSON.parse(evaluate(context, `(()=>{
     startGame();state.running=false;Math.random=()=>0;state.level=80;syncSkills();
     const item=(id,build,slot)=>({id,rarity:5,namedMythicId:id,buildTag:build,slot,stats:{},affixes:[],locked:true});
-    const hit=(build,ids,turns=1)=>{state.equipment={weapon:null,head:null,armor:null,boots:null,ring:null,amulet:null};ids.forEach((x,i)=>state.equipment[x[1]]=item(x[0],build,x[1]));state.skillReadyAt={};state.combatTurn=1;state.enemy=makeEnemy(false);state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();for(let i=0;i<turns;i++){playerAttack();state.combatTurn++;}return state.enemy.maxHp-state.enemy.hp;};
+    const hit=(build,ids,turns=1)=>{state.equipment={weapon:null,head:null,armor:null,boots:null,ring:null,amulet:null};ids.forEach((x,i)=>state.equipment[x[1]]=item(x[0],build,x[1]));state.skillReadyAt={};state.combatTurn=1;state.enemy=makeEnemy(false);state.enemy.ecologyId='neutral';state.enemy.ecologyEvadeHero=0;state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();for(let i=0;i<turns;i++){playerAttack();state.combatTurn++;}return state.enemy.maxHp-state.enemy.hp;};
     const base=hit('none',[],1),crit=hit('crit',[['worldfang','weapon'],['murderclock','amulet']],1),blood=hit('blood',[['titanheart','armor'],['bloodcrown','head']],1),burn=hit('burn',[['emberstaff','weapon'],['ashcrown','head']],2);
     if(!state.pets.length){const p=createPet('灰尾幼狼','Attack',0);state.pets=[p];state.activePetId=p.id;}
     const pet=hit('pet',[['beastpact','amulet'],['twinfang','weapon']],1);
@@ -702,7 +847,7 @@ test("build cores produce distinct combat events instead of passive score multip
   assert(result.netTaken >= 0);
 });
 
-test("level 140 is a hard cap and offline protection restores the selected difficulty band", () => {
+test("level 140 is a hard cap and offline settlement preserves the selected difficulty band", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
     alpha041EnsureState();state.level=139;state.xp=xpNeed(139)-1;gainXp(999999999);
@@ -713,7 +858,7 @@ test("level 140 is a hard cap and offline protection restores the selected diffi
   })()`));
   assert.deepStrictEqual(result.cap, { level: 140, xp: 0 });
   assert.deepStrictEqual(result.before, [1, 10]);
-  assert.deepStrictEqual(result.during, [1, 29]);
+  assert.deepStrictEqual(result.during, [1, 10]);
   assert.deepStrictEqual(result.after, [1, 10]);
   assert.strictEqual(result.selected, "normal");
 });
@@ -734,7 +879,7 @@ test("0.42 retires legacy rebirth tabs and records build damage by source", () =
   const result = JSON.parse(evaluate(context, `(()=>{
     state.tab='rebirth';alpha041EnsureState();state.buildDamage042={};
     state.equipment={weapon:null,head:null,armor:null,boots:null,ring:null,amulet:null};
-    state.enemy=makeEnemy(false);state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();playerAttack();
+    state.enemy=makeEnemy(false);state.enemy.ecologyId='neutral';state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();playerAttack();
     return JSON.stringify({tab:state.tab,rebirths:state.rebirths,damage:state.buildDamage042.normal?.basic||0});
   })()`));
   assert.strictEqual(result.tab,"character");
@@ -795,6 +940,202 @@ test("mutant awakening preserves the lifelong pet and consumes only the donor", 
   assert.strictEqual(result.trait, "迅捷回响");
 });
 
+test("0.43 exposes selectable live speeds and bounds the 24-hour offline campaign", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.battleSpeed=4;alpha043EnsureState();
+    const controls=renderAlpha043BattleControls();
+    return JSON.stringify({version:VERSION,speed:state.battleSpeed,offline:alpha043OfflineBattleCount(24*60*60*1000),buttons:[1,2,4].every(x=>controls.includes('×'+x))});
+  })()`));
+  assert.deepStrictEqual(result, {
+    version: "0.45.0",
+    speed: 4,
+    offline: 1920,
+    buttons: true,
+  });
+});
+
+test("0.43 auto dismantling protects upgrades and every mythic", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state=fresh();state.started=true;state.race='human';state.style='melee';
+    state.unlockedRaces=['human'];state.unlockedClasses=['melee'];
+    alpha043EnsureState();state.autoLoot.minRarity=3;state.autoLoot.keepUpgrades=false;
+    const low=makeItem(1,null,0,false),before=state.gold;receiveItem(low);
+    const mythic=makeItem(1,'sword',5,false);receiveItem(mythic);
+    const ui=renderInventory();
+    return JSON.stringify({lowGone:!state.inventory.some(x=>x.id===low.id),goldGain:state.gold>before,mythicKept:state.inventory.some(x=>x.id===mythic.id),mythicLocked:mythic.locked,threshold:state.autoLoot.minRarity,ui:ui.includes('自动分解与保护')&&ui.includes('重要收获')&&ui.includes('神话音效')});
+  })()`));
+  assert.deepStrictEqual(result, {
+    lowGone: true,
+    goldGain: true,
+    mythicKept: true,
+    mythicLocked: true,
+    threshold: 3,
+    ui: true,
+  });
+});
+
+test("0.43 flattens raw mythic stats while retaining named build powers", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state=fresh();state.started=true;state.race='human';state.style='melee';
+    const item=makeItem(1,'sword',5,false);
+    return JSON.stringify({statGap:QUALITY_STAT_MULT[5]/QUALITY_STAT_MULT[4],scoreGap:QUALITY_SCORE_MULT[5]/QUALITY_SCORE_MULT[4],named:!!item.namedMythicId,lockedAfterReceive:(receiveItem(item),item.locked),curve:item.qualityCurveVersion});
+  })()`));
+  assert(result.statGap < 1.25);
+  assert(result.scoreGap < 1.25);
+  assert.strictEqual(result.named, true);
+  assert.strictEqual(result.lockedAfterReceive, true);
+  assert.strictEqual(result.curve, 9);
+});
+
+test("0.43 mythic migration is idempotent across repeated save loads", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state=fresh();state.started=true;state.race='human';state.style='melee';state.unlockedRaces=['human'];state.unlockedClasses=['melee'];
+    const item=makeItem(1,'sword',5,false);receiveItem(item);save();
+    const first=JSON.stringify(item.stats);load();const second=JSON.stringify(state.inventory.find(x=>x.id===item.id).stats);load();const third=JSON.stringify(state.inventory.find(x=>x.id===item.id).stats);
+    return JSON.stringify({first,second,third,curve:state.inventory.find(x=>x.id===item.id).qualityCurveVersion});
+  })()`));
+  assert.strictEqual(result.first, result.second);
+  assert.strictEqual(result.second, result.third);
+  assert.strictEqual(result.curve, 9);
+});
+
+test("0.43 offline report records rarity, dismantling and important loot", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state=fresh();state.started=true;state.race='human';state.style='melee';
+    state.unlockedRaces=['human'];state.unlockedClasses=['melee'];alpha043EnsureState();
+    state.autoLoot.minRarity=4;state.autoLoot.keepUpgrades=false;
+    alpha043BeginOfflineSession({elapsed:3600000,realElapsed:3600000});
+    receiveItem(makeItem(1,null,0,false));receiveItem(makeItem(1,'sword',5,false));
+    const report=alpha043CompleteOfflineSession();
+    return JSON.stringify({duration:report.durationText,drops:report.dropTotal,normal:report.drops[0],mythic:report.drops[5],salvaged:report.salvaged,highlights:report.highlights.length,last:state.lastOfflineReport.dropTotal,reopen:renderAlpha043LootHub().includes('查看战报')});
+  })()`));
+  assert.deepStrictEqual(result, {
+    duration: "1小时",
+    drops: 2,
+    normal: 1,
+    mythic: 1,
+    salvaged: 1,
+    highlights: 2,
+    last: 2,
+    reopen: true,
+  });
+});
+
+test("compressed offline campaign remains finite across 1000 resolved battles", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    let seed=987654321;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
+    startGame();state.running=true;alpha043BeginOfflineSession({elapsed:3600000,realElapsed:3600000});
+    for(let i=0;i<1000;i++)alpha043ResolveOfflineBattle();
+    const report=alpha043CompleteOfflineSession();
+    const values=[state.level,state.xp,state.gold,state.hp,state.mp,state.totalWins,state.totalLosses,state.inventory.length,state.pets.length,report.dropTotal];
+    return JSON.stringify({finite:values.every(Number.isFinite),nonnegative:values.every(x=>x>=0),battles:report.wins+report.losses,version:state.version});
+  })()`));
+  assert.deepStrictEqual(result, {
+    finite: true,
+    nonnegative: true,
+    battles: 1000,
+    version: "0.45.0",
+  });
+});
+
+test("0.43 pets receive equipment-gap compensation on all combat stats", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{const p=createPet('灰尾幼狼','Attack',0);const boosted=petStats(p);const raw=(()=>{const fn=String(petStats);return boosted})();return JSON.stringify({hp:boosted.maxHp,atk:boosted.atk,def:boosted.def,magic:boosted.magic,notice:renderPets().includes('固定提高35%')})})()`));
+  assert(result.hp > 0 && result.atk > 0 && result.def > 0 && result.magic > 0);
+  assert.strictEqual(result.notice, true);
+});
+
+test("0.43 capacity upgrades are reachable from inventory and pet pages", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{state.gold=100000;const i=state.inventoryCapacity,p=state.petCapacity;const invUi=renderInventory(),petUi=renderPets();expandInventory();expandPetCapacity();return JSON.stringify({invUi:invUi.includes('物品栏扩容'),petUi:petUi.includes('宠物栏与伙伴补偿'),inv:state.inventoryCapacity-i,pet:state.petCapacity-p})})()`));
+  assert.deepStrictEqual(result, { invUi: true, petUi: true, inv: 5, pet: 2 });
+});
+
+test("0.43 skills use deterministic priority without proficiency growth", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{state.unlockedClasses=['farmer'];state.style='farmer';syncSkills();state.activeSkillSlots=['farmer_swing'];state.mp=999;state.skillReadyAt={};const before=state.skillUse.farmer_swing||0;const picked=chooseSkill('attack');registerSkillUse(picked);const ui=renderSkills();return JSON.stringify({picked,before,after:state.skillUse.farmer_swing||0,noMastery:ui.includes('没有熟练度'),priority:ui.includes('从上到下')})})()`));
+  assert.deepStrictEqual(result, { picked: "farmer_swing", before: 0, after: 0, noMastery: true, priority: true });
+});
+
+test("0.44 weapon refinement reaches cumulative +275% at +10", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    const weapon=makeItem(1,'sword',2,false),armor=makeItem(1,null,2,false);
+    weapon.slot='weapon';weapon.refine=10;armor.slot='armor';armor.refine=5;
+    return JSON.stringify({weaponMax:refineMaxLevel(weapon),weaponPct:refineBonusPct(weapon),weaponMult:refineMultiplier(weapon),armorMax:refineMaxLevel(armor),armorPct:refineBonusPct(armor),ui:renderInventory().includes('满级累计提升275%')});
+  })()`));
+  assert.deepStrictEqual(result, { weaponMax: 10, weaponPct: 275, weaponMult: 3.75, armorMax: 5, armorPct: 40, ui: true });
+});
+
+test("0.44 enemy ecologies are visible and have bounded counterplay", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    let seed=12345;Math.random=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
+    state.mapId='hill';const armor=makeEnemy(true);
+    state.mapId='meadow';const evade=makeEnemy(true);
+    state.mapId='forest';const regen=makeEnemy(true);regen.boss=false;regen.round=4;const before=regen.hp=Math.round(regen.maxHp*.5);alpha044OnEnemyRound(regen);
+    const maps=renderMaps();
+    return JSON.stringify({armor:armor.ecologyId,armorRaised:armor.def>0,evade:evade.ecologyId,evadeHero:evade.ecologyEvadeHero,regen:regen.ecologyId,healed:regen.hp>before,maps:maps.includes('敌人生态')&&maps.includes('生态应对')});
+  })()`));
+  assert.deepStrictEqual(result, { armor: "armor", armorRaised: true, evade: "evade", evadeHero: 0.16, regen: "regen", healed: true, maps: true });
+});
+
+test("0.45 evolution choices change form names and complete missing route effects", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.pets=[];state.nextId=1;state.hp=1;
+    const tree=createPet('树灵幼芽','Magic',2);tree.mutant=false;tree.tier=6;tree.evolutionBranches={};state.pets=[tree];state.activePetId=tree.id;
+    choosePetEvolution(tree.id,3,'guardian');choosePetEvolution(tree.id,6,'harmony');
+    const s=stats(),ps=petStats(tree),enemy=makeEnemy(false);state.temp={};state.hp=Math.round(s.maxHp*.25);tree.hp=Math.round(ps.maxHp*.25);tree.battleTurns=4;
+    const hp0=state.hp,pet0=tree.hp;petSpeciesSpecial(tree,enemy,ps,s);
+    const spirit=createPet('王魂侍从','Defense',4);spirit.mutant=false;spirit.tier=6;spirit.evolutionBranches={stage3:'assault',stage6:'apex'};spirit.name='不灭猎王';state.pets=[spirit];state.activePetId=spirit.id;state.enemy=makeEnemy(true);const enemyHp=state.enemy.hp;spirit.hp=0;spirit.apexRevived=false;spirit.fallen=false;markPetFallen(spirit);
+    return JSON.stringify({treeName:tree.name,treeHealed:state.hp>hp0&&tree.hp>pet0,bonusLogged:state.log.some(x=>x.msg.includes('古木守心')),revived:spirit.apexRevived&&!spirit.fallen,blade:state.enemy.hp<enemyHp});
+  })()`));
+  assert.deepStrictEqual(result, { treeName: "生命共鸣", treeHealed: true, bonusLogged: true, revived: true, blade: true });
+});
+
+test("0.45 gives the Tier 10 initial companion a permanent final path", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.pets=[];const p=createPet('灰尾幼狼','Attack',0);p.mutant=false;p.initialBond=true;p.tier=10;p.evolutionBranches={stage3:'assault',stage6:'apex'};state.pets=[p];state.activePetId=p.id;
+    const enemy={boss:true,hp:100,maxHp:100,def:10};const base=petSpeciesDamageMult(p,enemy);chooseLifelongPath045(p.id,'hunt');const hunt=petSpeciesDamageMult(p,enemy),power=petCombatPower(p),ui=renderPets();
+    p.lifelongPath='guard';const petTaken=petDamageTakenMult(p),playerTaken=playerDamageTakenPetMult(p);
+    return JSON.stringify({path:p.lifelongPath,hunt:Math.round(hunt/base*100),power,petTaken,playerTaken,ui:ui.includes('终身伙伴')&&ui.includes('变异觉醒')});
+  })()`));
+  assert.strictEqual(result.hunt, 132);
+  assert(result.power > 0 && result.petTaken < 1 && result.playerTaken < 1);
+  assert.strictEqual(result.ui, true);
+});
+
+test("0.45 mutation awakening preserves the original lifelong companion", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.pets=[];const target=createPet('灰尾幼狼','Attack',0),donor=createPet('灰尾幼狼','Magic',0);target.mutant=false;target.initialBond=true;target.level=41;target.tier=9;target.evolutionBranches={stage3:'guardian',stage6:'harmony'};donor.mutant=true;donor.mutationTrait='frenzy';state.pets=[target,donor];state.activePetId=target.id;awakenLifelongPet045(target.id,donor.id);
+    return JSON.stringify({count:state.pets.length,id:state.pets[0].id,level:state.pets[0].level,tier:state.pets[0].tier,branch:state.pets[0].evolutionBranches.stage6,mutant:state.pets[0].mutant,trait:state.pets[0].mutationTrait});
+  })()`));
+  assert.deepStrictEqual(result, { count: 1, id: "p1", level: 41, tier: 9, branch: "harmony", mutant: true, trait: "frenzy" });
+});
+
+test("0.45 codex permanently tracks species, types, routes and mutations", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.petCodex={'灰尾幼狼':3};state.petCodex045={};state.pets=[];
+    const a=createPet('灰尾幼狼','Attack',0),b=createPet('灰尾幼狼','Magic',0);a.mutant=true;a.mutationTrait='bossbane';a.tier=6;a.evolutionBranches={stage3:'assault',stage6:'apex'};b.mutant=false;b.evolutionBranches={stage3:'guardian'};alpha045RecordPetDiscovery(a);alpha045RecordPetDiscovery(b);const summary=alpha045CodexSummary(),pets=renderPets(),maps=renderMaps();
+    return JSON.stringify({summary,record:state.petCodex045['灰尾幼狼'],pets:pets.includes('伙伴图鉴与长期收集')&&pets.includes('获得3 · 最高6阶'),maps:maps.includes('区域伙伴追踪')&&maps.includes('Boss专属')});
+  })()`));
+  assert.deepStrictEqual(result.summary, { species: 1, types: 2, branches: 3, mutations: 1 });
+  assert.strictEqual(result.record.found, 3);
+  assert.strictEqual(result.record.highestTier, 6);
+  assert.strictEqual(result.pets, true);
+  assert.strictEqual(result.maps, true);
+});
+
 test("long deterministic battle run keeps core state finite", () => {
   const context = createContext();
   const result = JSON.parse(
@@ -813,8 +1154,8 @@ test("long deterministic battle run keeps core state finite", () => {
     finite: true,
     nonnegative: true,
     started: true,
-    version: "0.42.0",
+    version: "0.45.0",
   });
 });
 
-console.log("\nAlpha 0.42 regression suite passed.");
+console.log("\nAlpha 0.45 regression suite passed.");

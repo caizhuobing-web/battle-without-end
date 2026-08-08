@@ -1,11 +1,11 @@
-/* Alpha 0.35 iOS/PWA background battle catch-up.
+/* Alpha 0.43 iOS/PWA background battle catch-up.
    iOS suspends browser JS in background, so we freeze the live timer on hide
-   and replay the missed 650ms battle ticks when the app becomes visible again. */
+   and resolve a bounded 24-hour offline campaign when the app becomes visible again. */
 (() => {
   "use strict";
   const KEY = "bwe-background-battle-v1";
   const TICK_MS = 650;
-  const MAX_MS = 8 * 60 * 60 * 1000;
+  const MAX_MS = 24 * 60 * 60 * 1000;
   const MIN_MS = 1800;
   let suspended = false;
   let settling = false;
@@ -40,6 +40,10 @@
   }
   function startLiveTimer() {
     try {
+      if (typeof window.alpha043RestartBattleTimer === "function") {
+        window.alpha043RestartBattleTimer();
+        return;
+      }
       if (
         typeof tickTimer !== "undefined" &&
         !tickTimer &&
@@ -130,14 +134,16 @@
     settling = true;
     stopLiveTimer();
     const elapsed = Math.min(realElapsed, MAX_MS),
-      ticks = Math.floor(elapsed / TICK_MS),
+      ticks = typeof window.alpha043OfflineBattleCount === "function"
+        ? window.alpha043OfflineBattleCount(elapsed)
+        : Math.floor(elapsed / TICK_MS),
       before = snap();
     const difficultyProtection =
       typeof window.alpha041BeginOfflineProtection === "function"
         ? window.alpha041BeginOfflineProtection()
         : null;
     toast(
-      `<b>正在结算后台战斗…</b><div class="muted">离开 ${durationText(realElapsed)}${realElapsed > MAX_MS ? " · 按8小时上限结算" : ""}</div>`,
+      `<b>正在生成离线战报…</b><div class="muted">离开 ${durationText(realElapsed)}${realElapsed > MAX_MS ? " · 按24小时上限结算" : ""}</div>`,
       0,
     );
 
@@ -151,6 +157,8 @@
       save: typeof save === "function" ? save : null,
     };
     try {
+      if (typeof window.alpha043BeginOfflineSession === "function")
+        window.alpha043BeginOfflineSession({ elapsed, realElapsed, battles: ticks });
       if (old.render) render = () => {};
       if (old.renderBattleOnly) renderBattleOnly = () => {};
       if (old.renderLogOnly) renderLogOnly = () => {};
@@ -167,15 +175,17 @@
           if (important) old.log(msg, cls, category || "important");
         };
       }
-      const CHUNK = 1000;
+      const CHUNK = 500;
       for (let i = 0; i < ticks; i++) {
-        battleTick();
+        if (typeof window.alpha043ResolveOfflineBattle === "function")
+          window.alpha043ResolveOfflineBattle();
+        else battleTick();
         if (!state.running) break;
         if (i > 0 && i % CHUNK === 0) {
           const pct = Math.min(99, Math.round((i / ticks) * 100));
           const el = document.getElementById("offline-battle-toast");
           if (el)
-            el.querySelector("b").textContent = `正在结算后台战斗… ${pct}%`;
+            el.querySelector("b").textContent = `正在生成离线战报… ${pct}%`;
           await sleep0();
         }
       }
@@ -208,6 +218,15 @@
     }
     startLiveTimer();
 
+    let detailedReport = null;
+    try {
+      if (typeof window.alpha043CompleteOfflineSession === "function")
+        detailedReport = window.alpha043CompleteOfflineSession();
+    } catch (_) {}
+    try {
+      old.save && old.save();
+    } catch (_) {}
+
     const parts = [`胜利 ${Math.max(0, delta(before, after, "wins"))} 场`];
     const losses = Math.max(0, delta(before, after, "losses"));
     if (losses) parts.push(`失败 ${losses}`);
@@ -232,8 +251,8 @@
       old.log && old.log(`【后台结算】${summary}`, "important", "important");
     } catch (_) {}
     toast(
-      `<b>后台战斗结算完成</b><div>${parts.join(" · ")}</div><div class="muted">${durationText(elapsed)}${realElapsed > MAX_MS ? " · 已达到8小时结算上限" : ""}</div>`,
-      6500,
+      `<b>离线战报已生成</b><div>${parts.join(" · ")}</div><div class="muted">${durationText(elapsed)} · 稳定离线效率${realElapsed > MAX_MS ? " · 已达到24小时结算上限" : ""}</div>`,
+      4200,
     );
   }
 
