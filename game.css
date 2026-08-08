@@ -1533,6 +1533,9 @@ details.mini .help-body {
   background: rgba(8, 7, 6, 0.76);
   backdrop-filter: blur(2px);
 }
+.defeat-report-overlay[hidden] {
+  display: none;
+}
 .defeat-report-sheet {
   width: min(520px, 100%);
   max-height: min(70vh, 520px);

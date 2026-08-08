@@ -155,7 +155,7 @@ test("all browser scripts parse and load in index order", () => {
   const context = createContext();
   const startTitle = evaluate(
     context,
-    `(()=>{renderStart();return document.getElementById('app').innerHTML.includes('无尽战域：Alpha 0.45.3')})()`,
+    `(()=>{renderStart();return document.getElementById('app').innerHTML.includes('无尽战域：Alpha 0.45.3.1')})()`,
   );
   assert.strictEqual(startTitle, true);
 });
@@ -753,6 +753,35 @@ test("defeat diagnosis keeps a fixed compact slot and opens details only on dema
   });
 });
 
+test("0.45.3.1 hides the pre-mounted defeat dialog until a report is explicitly opened", () => {
+  const context = createContext();
+  const result = JSON.parse(
+    evaluate(
+      context,
+      `(()=>{
+        startGame();state.running=false;renderBattleOnly();
+        const overlay=document.getElementById('live-defeat-overlay');
+        const onStart=overlay.hidden;
+        state.lastDefeatReport={primary:'破甲不足',enemy:'测试敌人',enemyHpPct:64,rounds:5,reasons:[{name:'破甲不足',advice:'换上破甲技能。'}]};
+        setDefeatReportOpen(false);renderBattleOnly();const withClosedReport=overlay.hidden;
+        toggleDefeatReport(true);renderBattleOnly();const whileOpen=overlay.hidden;
+        toggleDefeatReport(false);renderBattleOnly();const afterClose=overlay.hidden;
+        state.lastDefeatReport=null;setDefeatReportOpen(false);renderBattleOnly();const withoutReport=overlay.hidden;
+        return JSON.stringify({onStart,withClosedReport,whileOpen,afterClose,withoutReport});
+      })()`,
+    ),
+  );
+  assert.deepStrictEqual(result, {
+    onStart: true,
+    withClosedReport: true,
+    whileOpen: false,
+    afterClose: true,
+    withoutReport: true,
+  });
+  const css = read("game.css");
+  assert(/\.defeat-report-overlay\[hidden\]\s*\{\s*display:\s*none;\s*\}/.test(css));
+});
+
 test("0.45.3 battle and log docks preserve their roots and fixed geometry", () => {
   const context = createContext();
   const result = JSON.parse(
@@ -1313,4 +1342,4 @@ test("long deterministic battle run keeps core state finite", () => {
   });
 });
 
-console.log("\nAlpha 0.45.3 regression suite passed.");
+console.log("\nAlpha 0.45.3.1 regression suite passed.");
