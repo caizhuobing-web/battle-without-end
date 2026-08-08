@@ -5,21 +5,22 @@
 
   const DIFFICULTIES = [
     ["normal", "普通", 1, 1, 1],
-    ["hard", "困难", 1.45, 1.12, 1.15],
-    ["expert", "专家", 2.05, 1.28, 1.35],
-    ["master", "大师", 2.9, 1.5, 1.6],
-    ["torment1", "折磨 I", 4.1, 1.78, 1.9],
-    ["torment2", "折磨 II", 5.7, 2.02, 2.15],
-    ["torment3", "折磨 III", 7.8, 2.28, 2.4],
-    ["torment4", "折磨 IV", 10.6, 2.56, 2.7],
-    ["torment5", "折磨 V", 14.3, 2.86, 3],
-    ["torment6", "折磨 VI", 19.2, 3.18, 3.35],
-    ["torment7", "折磨 VII", 25.6, 3.52, 3.7],
-    ["torment8", "折磨 VIII", 34, 3.9, 4.1],
-    ["torment9", "折磨 IX", 45.2, 4.35, 4.55],
-    ["torment10", "折磨 X", 74, 4.9, 5.9],
+    ["hard", "困难", 1, 1, 1.15],
+    ["expert", "专家", 1, 1, 1.35],
+    ["master", "大师", 1, 1, 1.6],
+    ["torment1", "折磨 I", 1.35, 1.12, 1.9],
+    ["torment2", "折磨 II", 1.7, 1.24, 2.15],
+    ["torment3", "折磨 III", 2.15, 1.38, 2.4],
+    ["torment4", "折磨 IV", 2.7, 1.54, 2.7],
+    ["torment5", "折磨 V", 3.4, 1.72, 3],
+    ["torment6", "折磨 VI", 4.3, 1.92, 3.35],
+    ["torment7", "折磨 VII", 5.4, 2.14, 3.7],
+    ["torment8", "折磨 VIII", 6.8, 2.38, 4.1],
+    ["torment9", "折磨 IX", 8.6, 2.66, 4.55],
+    ["torment10", "折磨 X", 10.8, 2.98, 5.9],
   ].map(([id, name, hp, atk, reward], index) => ({
     id, name, hp, atk, def: Math.sqrt(hp), reward, index,
+    minLevel: index * 10 + 1, maxLevel: (index + 1) * 10,
     torment: index >= 4,
   }));
   const DIFFICULTY_BY_ID = Object.fromEntries(DIFFICULTIES.map((d) => [d.id, d]));
@@ -35,11 +36,15 @@
   // Keep compatibility fields for the old battle formula, but make all regions equal-value.
   MAPS.splice(0, MAPS.length, ...MAPS.filter((m) => PERMANENT_MAP_IDS.includes(m.id)));
   MAPS.forEach((m) => Object.assign(m, {
-    cp: 117, mod: 0, gearTier: 1, petTier: 1, threatCap: 0, levels: [1, 100],
+    cp: 117, mod: 0, gearTier: 1, petTier: 1, threatCap: 0, levels: [1, 10],
   }));
 
   function difficulty() {
     return DIFFICULTY_BY_ID[state.worldDifficulty] || DIFFICULTIES[0];
+  }
+  function applyDifficultyLevels() {
+    const d = difficulty();
+    MAPS.forEach((m) => { m.levels = [d.minLevel, d.maxLevel]; });
   }
   function bossSnapshotKey(mapId = state.mapId, difficultyId = state.worldDifficulty) {
     return `${mapId}:${difficultyId}`;
@@ -92,6 +97,7 @@
       p.mutationTrait = p.mutationTrait || (p.mutant ? "原生变异" : null);
     });
     delete state.shop?.stock;
+    applyDifficultyLevels();
     restoreEncounterState();
   }
 
@@ -109,7 +115,7 @@
     return {
       tier: d.index, cpMult: Math.sqrt(d.hp * d.atk * Math.sqrt(d.def)),
       hp: d.hp, atk: d.atk, def: d.def, speed: 1 + d.index * 0.012,
-      reward: d.reward, levelBonus: Math.floor(d.index / 2), worldTier: d.index,
+      reward: d.reward, levelBonus: 0, worldTier: d.index,
     };
   };
   dangerDropProfile = function () {
@@ -150,6 +156,7 @@
     if (!next || next.index > state.highestUnlockedDifficulty) return;
     persistEncounterState();
     state.worldDifficulty = id;
+    applyDifficultyLevels();
     restoreEncounterState();
     state.enemy = null;
     prepareNewBattle();
@@ -233,7 +240,7 @@
   window.marketPanel = () => "";
   window.renderMapSystemsBefore = () => {
     const d = difficulty(), stats = state.difficultyStats[d.id] || {};
-    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta">生命×${d.hp.toFixed(2)} · 攻击×${d.atk.toFixed(2)} · 综合收益×${d.reward.toFixed(2)} · ${d.torment ? "神话／变异X／★词缀已开放" : "基础构筑阶段"}</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}</button>`).join("")}</div><div class="controls"><button onclick="challengeDifficultyBoss()">挑战${d.name}突破Boss</button></div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。胜利只解锁下一档，不自动升档。</div></div>`;
+    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta">生命×${d.hp.toFixed(2)} · 攻击×${d.atk.toFixed(2)} · 综合收益×${d.reward.toFixed(2)} · ${d.torment ? "神话／变异X／★词缀已开放" : "等级成长阶段"}</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="controls"><button onclick="challengeDifficultyBoss()">挑战${d.name}突破Boss</button></div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。胜利只解锁下一档，不自动升档。</div></div>`;
   };
   renderMaps = function () {
     return `${window.renderMapSystemsBefore()}${helpBlock("永久地图规则", "地图只决定怪物生态、Boss、宠物物种与定向掉落；五张地图共享等级、装备和世界难度，不再存在地图T级、装备阶级或宠物阶级门槛。")}${MAPS.map((m) => {
