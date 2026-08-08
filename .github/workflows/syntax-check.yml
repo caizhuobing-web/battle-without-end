@@ -1,4 +1,4 @@
-name: Alpha 0.38 Syntax Check
+name: Alpha 0.42 Regression Check
 on:
   push:
     branches: [main]
@@ -11,11 +11,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Check JavaScript chunks
+      - name: Check runtime and regression suite
         run: |
           for f in *.js api/*.js; do
             echo "Checking $f"
             node --check "$f"
           done
-          cat core-*.js > /tmp/all-core.js
-          node --check /tmp/all-core.js
+          node tests/alpha-039-regression.js

@@ -132,6 +132,10 @@
     const elapsed = Math.min(realElapsed, MAX_MS),
       ticks = Math.floor(elapsed / TICK_MS),
       before = snap();
+    const difficultyProtection =
+      typeof window.alpha041BeginOfflineProtection === "function"
+        ? window.alpha041BeginOfflineProtection()
+        : null;
     toast(
       `<b>正在结算后台战斗…</b><div class="muted">离开 ${durationText(realElapsed)}${realElapsed > MAX_MS ? " · 按8小时上限结算" : ""}</div>`,
       0,
@@ -178,6 +182,8 @@
     } catch (err) {
       console.error("Offline battle catch-up failed", err);
     } finally {
+      if (typeof window.alpha041EndOfflineProtection === "function")
+        window.alpha041EndOfflineProtection(difficultyProtection);
       if (old.render) render = old.render;
       if (old.renderBattleOnly) renderBattleOnly = old.renderBattleOnly;
       if (old.renderLogOnly) renderLogOnly = old.renderLogOnly;

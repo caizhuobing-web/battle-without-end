@@ -413,7 +413,7 @@ test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level
       `JSON.stringify({version:state.version,hasSoul:Object.prototype.hasOwnProperty.call(state,'soul'),pet:state.pets[0]&&{tier:state.pets[0].tier,evolutionXp:state.pets[0].evolutionXp,level:state.pets[0].level,xp:state.pets[0].xp,baseSpecies:state.pets[0].baseSpecies,investment:state.pets[0].fusionInvestedXp}})`,
     ),
   );
-  assert.strictEqual(migrated.version, "0.41.0");
+  assert.strictEqual(migrated.version, "0.42.0");
   assert.strictEqual(migrated.hasSoul, false);
   assert.deepStrictEqual(
     {
@@ -446,7 +446,7 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
     ),
   );
   assert.deepStrictEqual(migrated, {
-    version: "0.41.0",
+    version: "0.42.0",
     guardian: true,
     inherited: 138,
     bossBuildPreset: null,
@@ -461,7 +461,7 @@ test("0.40 save migrates into a separate 0.41 key without overwriting the source
   const raw = JSON.stringify(oldSave);
   const context = createContext({ "bwe-core-alpha-040": raw });
   const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,has041:!!localStorage.getItem('bwe-core-alpha-041'),source:localStorage.getItem('bwe-core-alpha-040')})`));
-  assert.strictEqual(result.version, "0.41.0");
+  assert.strictEqual(result.version, "0.42.0");
   assert.strictEqual(result.has041, true);
   assert.strictEqual(result.source, raw);
 });
@@ -645,10 +645,101 @@ test("world difficulty changes only by player choice and boss victories unlock w
     alpha041EnsureState();state.highestUnlockedDifficulty=0;state.worldDifficulty='normal';
     onBattleLost({boss:false},map());
     const afterLoss=state.worldDifficulty;
-    onBattleWon({boss:true},map());
+    onBattleWon({boss:true,difficultyBreakthrough:true},map());
     return JSON.stringify({afterLoss,current:state.worldDifficulty,highest:state.highestUnlockedDifficulty});
   })()`));
   assert.deepStrictEqual(result, { afterLoss: "normal", current: "normal", highest: 1 });
+});
+
+test("ordinary map bosses cannot unlock difficulty and breakthrough bosses use a fixed template", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    alpha041EnsureState();state.highestUnlockedDifficulty=0;state.worldDifficulty='normal';
+    onBattleWon({boss:true},map());const afterOrdinary=state.highestUnlockedDifficulty;
+    challengeDifficultyBoss();const e=makeEnemy(true);
+    return JSON.stringify({afterOrdinary,level:e.level,breakthrough:e.difficultyBreakthrough,prefix:e.bossPrefixId,name:e.name});
+  })()`));
+  assert.strictEqual(result.afterOrdinary, 0);
+  assert.strictEqual(result.level, 11);
+  assert.strictEqual(result.breakthrough, true);
+  assert.strictEqual(result.prefix, "none");
+  assert(result.name.includes("世界突破"));
+});
+
+test("six build families and twelve named mythics are mythic-only rule changers", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    const builds=Object.keys(ALPHA_041_BUILDS),mythics=ALPHA_041_NAMED_MYTHICS;
+    const ordinary=[];for(let i=0;i<80;i++)ordinary.push(makeItem(1,null,4,false));
+    const named=[];for(let i=0;i<240;i++){const it=makeItem(1,null,5,false);if(it.namedMythicId)named.push(it);}
+    return JSON.stringify({builds,mythicCount:mythics.length,mythicBuilds:[...new Set(mythics.map(x=>x.build))],ordinaryNamed:ordinary.filter(x=>x.namedMythicId).length,namedLocked:named.every(x=>x.locked),namedCount:named.length});
+  })()`));
+  assert.strictEqual(result.builds.length, 6);
+  assert.strictEqual(result.mythicCount, 12);
+  assert.strictEqual(result.mythicBuilds.length, 6);
+  assert.strictEqual(result.ordinaryNamed, 0);
+  assert.strictEqual(result.namedLocked, true);
+  assert(result.namedCount > 0);
+});
+
+test("build cores produce distinct combat events instead of passive score multipliers", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    startGame();state.running=false;Math.random=()=>0;state.level=80;syncSkills();
+    const item=(id,build,slot)=>({id,rarity:5,namedMythicId:id,buildTag:build,slot,stats:{},affixes:[],locked:true});
+    const hit=(build,ids,turns=1)=>{state.equipment={weapon:null,head:null,armor:null,boots:null,ring:null,amulet:null};ids.forEach((x,i)=>state.equipment[x[1]]=item(x[0],build,x[1]));state.skillReadyAt={};state.combatTurn=1;state.enemy=makeEnemy(false);state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();for(let i=0;i<turns;i++){playerAttack();state.combatTurn++;}return state.enemy.maxHp-state.enemy.hp;};
+    const base=hit('none',[],1),crit=hit('crit',[['worldfang','weapon'],['murderclock','amulet']],1),blood=hit('blood',[['titanheart','armor'],['bloodcrown','head']],1),burn=hit('burn',[['emberstaff','weapon'],['ashcrown','head']],2);
+    if(!state.pets.length){const p=createPet('灰尾幼狼','Attack',0);state.pets=[p];state.activePetId=p.id;}
+    const pet=hit('pet',[['beastpact','amulet'],['twinfang','weapon']],1);
+    state.pets=[];state.activePetId=null;state.equipment={weapon:null,head:null,armor:item('mirrorwall','shield','armor'),boots:null,ring:item('thornring','shield','ring'),amulet:null};state.enemy=makeEnemy(false);state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();const hp0=state.hp;enemyAttack();const shieldDamage=1e9-state.enemy.hp,netTaken=hp0-state.hp;
+    return JSON.stringify({base,crit,blood,burn,pet,shieldDamage,netTaken});
+  })()`));
+  assert(result.crit > result.base);
+  assert(result.blood > result.base);
+  assert(result.burn > result.base * 2);
+  assert(result.pet > result.base);
+  assert(result.shieldDamage > 0);
+  assert(result.netTaken >= 0);
+});
+
+test("level 140 is a hard cap and offline protection restores the selected difficulty band", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    alpha041EnsureState();state.level=139;state.xp=xpNeed(139)-1;gainXp(999999999);
+    const cap={level:state.level,xp:state.xp};state.level=35;state.worldDifficulty='normal';
+    const before=[...map().levels],snap=alpha041BeginOfflineProtection(),during=[...map().levels];
+    alpha041EndOfflineProtection(snap);const after=[...map().levels];
+    return JSON.stringify({cap,before,during,after,selected:state.worldDifficulty});
+  })()`));
+  assert.deepStrictEqual(result.cap, { level: 140, xp: 0 });
+  assert.deepStrictEqual(result.before, [1, 10]);
+  assert.deepStrictEqual(result.during, [1, 29]);
+  assert.deepStrictEqual(result.after, [1, 10]);
+  assert.strictEqual(result.selected, "normal");
+});
+
+test("0.42 uses smooth defense, seven equipment bands and real map slot focus", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.started=true;state.worldDifficulty='torment10';state.highestUnlockedDifficulty=13;state.mapId='meadow';alpha041EnsureState();
+    let weapon=0;for(let i=0;i<300;i++){const it=makeItem(1,null,2,true);if(it.slot==='weapon')weapon++;if(it.tier!==7)throw new Error('wrong tier')}
+    return JSON.stringify({zero:smoothDamageAfterDefense(100,0),mid:smoothDamageAfterDefense(100,180),high:smoothDamageAfterDefense(100,1800),weapon});
+  })()`));
+  assert.deepStrictEqual({zero:result.zero,mid:result.mid,high:result.high},{zero:100,mid:50,high:9});
+  assert(result.weapon > 100, `expected meadow weapon focus above the 50/300 baseline, got ${result.weapon}/300`);
+});
+
+test("0.42 retires legacy rebirth tabs and records build damage by source", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.tab='rebirth';alpha041EnsureState();state.buildDamage042={};
+    state.equipment={weapon:null,head:null,armor:null,boots:null,ring:null,amulet:null};
+    state.enemy=makeEnemy(false);state.enemy.hp=state.enemy.maxHp=1e9;prepareNewBattle();playerAttack();
+    return JSON.stringify({tab:state.tab,rebirths:state.rebirths,damage:state.buildDamage042.normal?.basic||0});
+  })()`));
+  assert.strictEqual(result.tab,"character");
+  assert.strictEqual(result.rebirths,0);
+  assert(result.damage>0);
 });
 
 test("world difficulty owns ten-level enemy bands from normal through torment X", () => {
@@ -722,8 +813,8 @@ test("long deterministic battle run keeps core state finite", () => {
     finite: true,
     nonnegative: true,
     started: true,
-    version: "0.41.0",
+    version: "0.42.0",
   });
 });
 
-console.log("\nAlpha 0.41 regression suite passed.");
+console.log("\nAlpha 0.42 regression suite passed.");

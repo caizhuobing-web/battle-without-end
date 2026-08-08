@@ -92,7 +92,7 @@ const PET_TIER_INSTINCTS = {
 
 /* ===== core-01.js ===== */
 ("use strict");
-const VERSION = "0.41.0";
+const VERSION = "0.42.0";
 const SAVE_KEY = "bwe-core-alpha-041";
 const ALPHA040_SAVE_KEY = "bwe-core-alpha-040";
 const ALPHA039_SAVE_KEY = "bwe-core-alpha-039";
@@ -4992,6 +4992,11 @@ function chooseSkill(cat) {
 function bossPrefixDamageTakenMult(e) {
   return e?.bossPrefixMechanic === "armor" && (e.round || 0) < 4 ? 0.6 : 1;
 }
+function smoothDamageAfterDefense(raw, defense, scale = 180) {
+  raw = Math.max(1, Number(raw) || 1);
+  defense = Math.max(0, Number(defense) || 0);
+  return Math.max(1, Math.round((raw * scale) / (scale + defense)));
+}
 function playerAttack() {
   const s = stats(),
     e = state.enemy;
@@ -5023,10 +5028,7 @@ function playerAttack() {
     if ((e.petWeakenTurns || 0) > 0) targetDef *= 0.9;
     if ((e.skillArmorBreakTurns || 0) > 0)
       targetDef *= 1 - (e.skillArmorBreak || 0.25);
-    let dmg = Math.max(
-      1,
-      Math.round((raw - targetDef) * bossPrefixDamageTakenMult(e)),
-    );
+    let dmg = Math.max(1, Math.round(smoothDamageAfterDefense(raw, targetDef) * bossPrefixDamageTakenMult(e)));
     if (e.shield > 0) {
       dmg = Math.max(1, Math.round(dmg * 0.55));
       e.shield = 0;
@@ -5072,10 +5074,7 @@ function playerAttack() {
     if ((e.petWeakenTurns || 0) > 0) targetDef *= 0.9;
     if ((e.skillArmorBreakTurns || 0) > 0)
       targetDef *= 1 - (e.skillArmorBreak || 0.25);
-    let dmg = Math.max(
-      1,
-      Math.round((raw - targetDef) * bossPrefixDamageTakenMult(e)),
-    );
+    let dmg = Math.max(1, Math.round(smoothDamageAfterDefense(raw, targetDef) * bossPrefixDamageTakenMult(e)));
     if (e.shield > 0) {
       dmg = Math.max(1, Math.round(dmg * 0.55));
       e.shield = 0;
@@ -5279,14 +5278,9 @@ function enemyAttack() {
   }
   const bossMult = e.boss && e.mapId === "hill" && e.round % 4 === 0 ? 1.65 : 1;
   if (bossMult > 1) log(`${e.name}发动裂风扑杀。`, "lose");
-  let dmg = Math.max(
-      1,
-      Math.round(
-        (enemyAtk * bossMult - s.def * 0.65) *
-          reduction *
-          (0.88 + Math.random() * 0.24),
-      ),
-    ),
+  let dmg = Math.max(1, Math.round(
+      smoothDamageAfterDefense(enemyAtk * bossMult, s.def * 0.65) *
+        reduction * (0.88 + Math.random() * 0.24))),
     actualPlayerDmg = 0;
   if (pAlive && p.type === "Defense" && Math.random() < 0.58) {
     const redirected = Math.max(1, Math.round(dmg * 0.58)),
@@ -6530,7 +6524,7 @@ resetGame = function () {
 /* ===== core-13.js ===== */
 function renderStart() {
   const app = document.getElementById("app");
-  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.41</h1><p class="subtitle">终身伙伴 · 世界难度 · 自动打宝 · 构筑突破</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
+  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.42</h1><p class="subtitle">终身伙伴 · 世界难度 · 自动打宝 · 构筑突破</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
     (id) => {
       const r = RACES[id];
       return `<div class="choice race" data-id="${id}" onclick="selectStart('race','${id}')"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">${r.traitName}：${r.traitDesc}</div>${miniDetail("属性倍率", identityGrowthText(r))}</div>`;
@@ -6684,7 +6678,7 @@ function render(preserveUi = true) {
     e = state.enemy,
     p = activePet();
   document.getElementById("app").innerHTML =
-    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.41</h1><div class="subtitle">终身伙伴 · 世界难度 · 自动打宝 · 构筑突破</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
+    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.42</h1><div class="subtitle">终身伙伴 · 世界难度 · 自动打宝 · 构筑突破</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
       .map(
         (x) =>
           `<div class="${x.cls} cat-${x.category || inferLogCategory(x.msg, x.cls)}">${x.msg}</div>`,
@@ -6705,7 +6699,7 @@ function render(preserveUi = true) {
       )
       .join(
         "",
-      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.41：五张永久地图、十四档世界难度与终身伙伴。</div></div>`;
+      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.42：装备成长、地图定向与构筑统计。</div></div>`;
   mainContentDirty = false;
   updateResourceBar();
   renderBattleOnly();
