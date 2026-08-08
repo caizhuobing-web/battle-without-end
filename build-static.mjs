@@ -33,7 +33,7 @@ const referenced = [
   ...manifest.icons.map((icon) => icon.src.replace(/^\.\//, "")),
 ];
 for (const file of new Set(referenced)) await stat(path.join(out, file));
-if (!html.includes("Alpha 0.45.4") || !html.includes("alpha-045-systems.js"))
-  throw new Error("Alpha 0.45.4 runtime is missing from the production artifact");
+if (!html.includes("Alpha 0.45.5") || !html.includes("alpha-045-systems.js"))
+  throw new Error("Alpha 0.45.5 runtime is missing from the production artifact");
 
 console.log(`Static production build ready: ${files.length} files`);

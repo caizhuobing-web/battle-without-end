@@ -170,6 +170,33 @@
     state.difficultyStats = state.difficultyStats || {};
     state.buildDamage042 = state.buildDamage042 || {};
     state.bossState = state.bossState || {};
+    state.petMutationPity = Math.max(0, Number(state.petMutationPity || 0));
+    state.mythicIdentityPity = Math.max(0, Number(state.mythicIdentityPity || 0));
+    if (Number(state.rareRewardMigrationVersion || 0) < 1) {
+      const allBossWins = Object.values(state.difficultyStats).reduce(
+          (sum, row) => sum + Math.max(0, Number(row?.bosses || 0)),
+          0,
+        ),
+        mythicBossWins = Object.entries(state.difficultyStats).reduce(
+          (sum, [id, row]) =>
+            sum +
+            ((DIFFICULTY_BY_ID[id]?.index || 0) >= 10
+              ? Math.max(0, Number(row?.bosses || 0))
+              : 0),
+          0,
+        );
+      if (!(state.pets || []).some((p) => p.mutant))
+        state.petMutationPity = Math.max(
+          state.petMutationPity,
+          Math.min(PET_MUTATION_SOFT_CAP_STREAK, allBossWins),
+        );
+      if (lockedMythicIdentities().length)
+        state.mythicIdentityPity = Math.max(
+          state.mythicIdentityPity,
+          Math.min(MYTHIC_IDENTITY_SOFT_CAP_STREAK, mythicBossWins),
+        );
+      state.rareRewardMigrationVersion = 1;
+    }
     const activeBossKey = bossSnapshotKey();
     if (!state.bossState[activeBossKey] && state.bossProgress?.[state.mapId]) {
       state.bossState[activeBossKey] = {
@@ -194,7 +221,7 @@
       state.petCapacity = Math.max(12, Number(state.petCapacity) || 12, (state.pets || []).length);
     }
     (state.pets || []).forEach((p) => {
-      p.tier = clamp(Number(p.tier || 1), 1, 10);
+      p.tier = Math.max(1, Math.round(Number(p.tier || 1)));
       migratePetFusionInvestment(p);
       p.baseSpecies = petBaseSpecies(p) === "星核幼龙" ? "灰尾幼狼" : petBaseSpecies(p);
       p.type = ({
@@ -493,9 +520,8 @@
     if (typeof previousLost === "function" && currentMap?.id !== "abyss") previousLost(enemy, currentMap);
   };
 
-  // Lifelong companion: cap progression and let mutant donors awaken the original pet.
-  const oldPetEvolutionNeed = petEvolutionNeed;
-  petEvolutionNeed = (p) => Number(p?.tier || 1) >= 10 ? Number.MAX_SAFE_INTEGER : oldPetEvolutionNeed(p);
+  // The Tier 10 covenant is a milestone, not a progression cap. Fusion remains
+  // unlimited and each later tier keeps the existing escalating material cost.
   window.awakenPetMutation = function (targetId, donorId) {
     const target = state.pets.find((p) => p.id === targetId), donor = state.pets.find((p) => p.id === donorId);
     if (!target || !donor || !donor.mutant || !samePetSpecies(target, donor) || target.id === donor.id) return alert("需要同物种变异X素材。");
@@ -514,7 +540,7 @@
     const damageRows = Object.entries(DAMAGE_LABELS_042).filter(([id]) => damage[id]).sort((a,b)=>(damage[b[0]]||0)-(damage[a[0]]||0)).map(([id,name])=>`<div class="stat"><b>${total ? Math.round((damage[id]||0)/total*100) : 0}%</b>${name}</div>`).join("");
     const cycle = ensureBossCycle(state.mapId);
     const petTier = petDropTierProfile041(d);
-    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 装备${1 + Math.floor(d.index / 2)}阶 · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta"><b>Boss宠物初始阶级：${petTier.label}</b>。自然掉落最高6阶，7—10阶仍需同物种融合。</div><div class="compact-meta">威胁T${cycle.threatTier || 0}/${THREAT_CAP_042}：胜利+1、失败−1；低威胁偏低等级，高威胁偏高等级，T${THREAT_CAP_042}固定出现Lv.${d.maxLevel}普通怪。</div><div class="compact-meta"><b>当前构筑：${activeBuildText()}</b>｜普通—传说按评分优先；只有命名神话按机制选择。</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="compact-meta">${bossEncounterText(state.mapId)}。区域Boss由普通怪进度触发；击败当前最高难度的区域Boss后解锁下一档，不自动切换。</div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。</div>${damageRows ? `<h3>构筑伤害贡献</h3><div class="stat-table">${damageRows}</div>` : ""}</div>`;
+    return `<div class="card difficulty-card"><div class="map-head"><h3>世界难度 · ${d.name}</h3><b>Lv.${d.minLevel}—${d.maxLevel} · 装备${1 + Math.floor(d.index / 2)}阶 · 最高 ${DIFFICULTIES[state.highestUnlockedDifficulty].name}</b></div><div class="compact-meta"><b>Boss宠物初始阶级：${petTier.label}</b>。自然掉落最高6阶，7阶以后依靠同物种无限融合，材料需求持续提高。</div><div class="compact-meta"><b>${petMutationPityText()}</b>｜<b>${mythicIdentityPityText()}</b></div><div class="compact-meta">威胁T${cycle.threatTier || 0}/${THREAT_CAP_042}：胜利+1、失败−1；低威胁偏低等级，高威胁偏高等级，T${THREAT_CAP_042}固定出现Lv.${d.maxLevel}普通怪。</div><div class="compact-meta"><b>当前构筑：${activeBuildText()}</b>｜普通—传说按评分优先；只有命名神话按机制选择。</div><div class="difficulty-grid">${DIFFICULTIES.map((x) => `<button ${x.index > state.highestUnlockedDifficulty ? "disabled" : ""} class="${x.id === d.id ? "active" : ""}" onclick="setWorldDifficulty('${x.id}')">${x.name}<small>Lv.${x.minLevel}—${x.maxLevel}</small></button>`).join("")}</div><div class="compact-meta">${bossEncounterText(state.mapId)}。区域Boss由普通怪进度触发；击败当前最高难度的区域Boss后解锁下一档，不自动切换。</div><div class="compact-meta">本难度胜率：${stats.battles ? ((stats.wins / stats.battles) * 100).toFixed(1) + "%" : "—"}。</div>${damageRows ? `<h3>构筑伤害贡献</h3><div class="stat-table">${damageRows}</div>` : ""}</div>`;
   };
   renderMaps = function () {
     return `${window.renderMapSystemsBefore()}${helpBlock("永久地图规则", "地图只决定怪物生态、Boss、可获得的宠物物种与装备部位倾向。定向掉落只提高对应装备部位的出现概率，不提高品质、阶级、属性或收益；其他部位仍然会掉落。五张地图共享等级、装备成长和世界难度。")}${MAPS.map((m) => {

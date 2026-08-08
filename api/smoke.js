@@ -27,7 +27,7 @@ const REQUIRED_IDENTIFIERS = [
 ];
 
 const REQUIRED_LITERALS = [
-  "Alpha 0.45.4",
+  "Alpha 0.45.5",
   "alpha043OfflineBattleCount",
   "alpha044AttackEvaded",
   "alpha045CodexSummary",
@@ -69,7 +69,7 @@ module.exports = async (req, res) => {
     const missing = findMissing(code);
     res.status(missing.length ? 500 : 200).json({
       ok: missing.length === 0,
-      version: "0.45.4",
+      version: "0.45.5",
       files: chunks.length,
       bytes: code.length,
       missing,
