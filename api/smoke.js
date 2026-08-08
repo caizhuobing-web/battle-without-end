@@ -26,7 +26,7 @@ const REQUIRED_IDENTIFIERS = [
   "PROGRESSION_GOALS",
 ];
 
-const REQUIRED_LITERALS = ["Alpha 0.41", "arcanesovereign"];
+const REQUIRED_LITERALS = ["Alpha 0.42", "arcanesovereign"];
 
 function findMissing(code) {
   const missingIdentifiers = REQUIRED_IDENTIFIERS.filter(
@@ -55,11 +55,11 @@ module.exports = async (req, res) => {
       chunks.push(await r.text());
     }
     const code = chunks.join("\n");
-    new vm.Script(code, { filename: "alpha-041-all.js" });
+    new vm.Script(code, { filename: "alpha-042-all.js" });
     const missing = findMissing(code);
     res.status(missing.length ? 500 : 200).json({
       ok: missing.length === 0,
-      version: "0.41.0",
+      version: "0.42.0",
       files: chunks.length,
       bytes: code.length,
       missing,
