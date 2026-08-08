@@ -1,4 +1,4 @@
-const CACHE_NAME = "bwe-alpha-040-v1";
+const CACHE_NAME = "bwe-alpha-041-v1";
 const CORE = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const CORE = [
   "./game-core.js",
   "./game-features.js",
   "./alpha-039-systems.js",
+  "./alpha-041-systems.js",
   "./background-progress.js",
   "./manifest.webmanifest",
   "./apple-touch-icon.png",

@@ -18,6 +18,7 @@ const REQUIRED_IDENTIFIERS = [
   "SHOP_REFRESH_MS",
   "BOSS_PET_BY_MAP",
   "ABYSS_VARIANTS",
+  "DIFFICULTIES",
   "samePetSpecies",
   "inheritPetEvolution",
   "CLASS_LINEAGES",
@@ -25,7 +26,7 @@ const REQUIRED_IDENTIFIERS = [
   "PROGRESSION_GOALS",
 ];
 
-const REQUIRED_LITERALS = ["Alpha 0.40", "arcanesovereign"];
+const REQUIRED_LITERALS = ["Alpha 0.41", "arcanesovereign"];
 
 function findMissing(code) {
   const missingIdentifiers = REQUIRED_IDENTIFIERS.filter(
@@ -44,6 +45,7 @@ module.exports = async (req, res) => {
       "game-core.js",
       "game-features.js",
       "alpha-039-systems.js",
+      "alpha-041-systems.js",
       "background-progress.js",
     ];
     const chunks = [];
@@ -53,11 +55,11 @@ module.exports = async (req, res) => {
       chunks.push(await r.text());
     }
     const code = chunks.join("\n");
-    new vm.Script(code, { filename: "alpha-040-all.js" });
+    new vm.Script(code, { filename: "alpha-041-all.js" });
     const missing = findMissing(code);
     res.status(missing.length ? 500 : 200).json({
       ok: missing.length === 0,
-      version: "0.40.0",
+      version: "0.41.0",
       files: chunks.length,
       bytes: code.length,
       missing,

@@ -145,6 +145,7 @@ test("all browser scripts parse and load in index order", () => {
     "game-core.js",
     "game-features.js",
     "alpha-039-systems.js",
+    "alpha-041-systems.js",
     "background-progress.js",
   ]);
   createContext();
@@ -307,7 +308,7 @@ test("Boss prefix weights and global loot multipliers match the GM curve", () =>
     evaluate(
       context,
       `(()=>{
-  startGame();state.running=false;Math.random=()=>.999;
+  startGame();state.running=false;state.highestUnlockedDifficulty=4;setWorldDifficulty('torment1');Math.random=()=>.999;
   const boss=makeEnemy(true),baseIdentity=identityDropChance(1),boostedIdentity=identityDropChance(boss.bossLootMult);
   Math.random=()=>.005;const baseMutation=rollPetMutation(map(),1),boostedMutation=rollPetMutation(map(),boss.bossLootMult);
   return JSON.stringify({weight:BOSS_PREFIXES.reduce((n,x)=>n+x.w,0),id:boss.bossPrefixId,loot:boss.bossLootMult,gold:boss.bossGoldMult,name:boss.name,identityRatio:boostedIdentity/baseIdentity,baseMutation,boostedMutation});
@@ -358,9 +359,8 @@ test("Boss global loot prefix raises pet acquisition without enabling ordinary p
  })()`,
     ),
   );
-  assert.strictEqual(result.basePets, 0);
-  assert.strictEqual(result.boostedPets, 1);
-  assert.strictEqual(result.afterNormal, 1);
+  assert.strictEqual(result.boostedPets, result.basePets + 1);
+  assert.strictEqual(result.afterNormal, result.boostedPets);
 });
 
 test("Boss retry uses half of the original encounter period even after danger falls", () => {
@@ -385,7 +385,7 @@ test("Boss retry uses half of the original encounter period even after danger fa
   assert.strictEqual(result.secondRetry, 13);
 });
 
-test("sold-out shop stock immediately refreshes by design", () => {
+test("legacy timed shop stock is retired in 0.41", () => {
   const context = createContext();
   const stock = JSON.parse(
     evaluate(
@@ -393,7 +393,7 @@ test("sold-out shop stock immediately refreshes by design", () => {
       `(()=>{state.shop.stock=[];state.shop.nextRefreshAt=Date.now()+999999;renderShop();return JSON.stringify({size:state.shop.stock.length,next:state.shop.nextRefreshAt>Date.now()})})()`,
     ),
   );
-  assert.deepStrictEqual(stock, { size: 6, next: true });
+  assert.deepStrictEqual(stock, { size: 0, next: true });
 });
 
 test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level", () => {
@@ -413,7 +413,7 @@ test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level
       `JSON.stringify({version:state.version,hasSoul:Object.prototype.hasOwnProperty.call(state,'soul'),pet:state.pets[0]&&{tier:state.pets[0].tier,evolutionXp:state.pets[0].evolutionXp,level:state.pets[0].level,xp:state.pets[0].xp,baseSpecies:state.pets[0].baseSpecies,investment:state.pets[0].fusionInvestedXp}})`,
     ),
   );
-  assert.strictEqual(migrated.version, "0.40.0");
+  assert.strictEqual(migrated.version, "0.41.0");
   assert.strictEqual(migrated.hasSoul, false);
   assert.deepStrictEqual(
     {
@@ -446,13 +446,24 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
     ),
   );
   assert.deepStrictEqual(migrated, {
-    version: "0.40.0",
+    version: "0.41.0",
     guardian: true,
     inherited: 138,
     bossBuildPreset: null,
     goalsClaimed: {},
     lastDefeatReport: null,
   });
+});
+
+test("0.40 save migrates into a separate 0.41 key without overwriting the source", () => {
+  const source = createContext();
+  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.40.0';d.started=true;d.race='human';d.style='melee';return JSON.stringify(d)})()`));
+  const raw = JSON.stringify(oldSave);
+  const context = createContext({ "bwe-core-alpha-040": raw });
+  const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,has041:!!localStorage.getItem('bwe-core-alpha-041'),source:localStorage.getItem('bwe-core-alpha-040')})`));
+  assert.strictEqual(result.version, "0.41.0");
+  assert.strictEqual(result.has041, true);
+  assert.strictEqual(result.source, raw);
 });
 
 test("background settlement replays the canonical battle tick without a parallel reward formula", () => {
@@ -462,26 +473,17 @@ test("background settlement replays the canonical battle tick without a parallel
   assert(!/receivePet\(|makeItem\(/.test(source));
 });
 
-test("gold baseline, Abyss entry and world-tier ratios survive the 0.40 upgrade", () => {
+test("five permanent maps and fourteen global difficulties replace Abyss and rebirth scaling", () => {
   const context = createContext();
   const result = JSON.parse(
     evaluate(
       context,
-      `(()=>{state.rebirths=1;state.rebirthLaws={war:0,time:0,hunt:0};state.mapId='meadow';const e=makeEnemy(false),rp=rebirthProfile(),abyss=MAPS.find(m=>m.id==='abyss');return JSON.stringify({gold:e.gold/e.title.gold,cp:abyss.cp,damage:rp.damage,hp:rp.hp,def:rp.def,pet:rp.petPower,goldRebirth:rp.gold,world:worldCombatScale('meadow')})})()`,
+      `(()=>{state.highestUnlockedDifficulty=13;setWorldDifficulty('torment10');return JSON.stringify({maps:MAPS.map(m=>m.id),difficulties:ALPHA_041_DIFFICULTIES.length,world:worldCombatScale('meadow'),rebirths:state.rebirths})})()`,
     ),
   );
-  assert(Math.abs(result.gold - 3.2) < 1e-9);
-  assert(result.cp >= 8000 && result.cp <= 10000);
-  assert.deepStrictEqual(
-    {
-      damage: result.damage,
-      hp: result.hp,
-      def: result.def,
-      pet: result.pet,
-      gold: result.goldRebirth,
-    },
-    { damage: 1.1, hp: 1.06, def: 1.06, pet: 1.1, gold: 1.08 },
-  );
+  assert.deepStrictEqual(result.maps, ["meadow", "hill", "forest", "shore", "ruins"]);
+  assert.strictEqual(result.difficulties, 14);
+  assert.strictEqual(result.rebirths, 0);
   assert.deepStrictEqual(
     {
       hp: result.world.hp,
@@ -489,7 +491,7 @@ test("gold baseline, Abyss entry and world-tier ratios survive the 0.40 upgrade"
       def: result.world.def,
       reward: result.world.reward,
     },
-    { hp: 1.12, atk: 1.08, def: 1.06, reward: 1.12 },
+    { hp: 74, atk: 4.9, def: Math.sqrt(74), reward: 5.9 },
   );
 });
 
@@ -627,14 +629,55 @@ test("a designated Boss preset round-trips to the prior farming build", () => {
   });
 });
 
-test("the duplicate random gear merchant is removed", () => {
+test("all equipment merchants are removed in favor of combat drops", () => {
   const context = createContext();
   const shop = evaluate(
     context,
     `(()=>{startGame();state.running=false;return renderShop()})()`,
   );
   assert(!shop.includes("<h3>装备行商</h3>"));
-  assert(shop.includes("定时装备商店"));
+  assert(!shop.includes("定时装备商店"));
+});
+
+test("world difficulty changes only by player choice and boss victories unlock without auto-switch", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    alpha041EnsureState();state.highestUnlockedDifficulty=0;state.worldDifficulty='normal';
+    onBattleLost({boss:false},map());
+    const afterLoss=state.worldDifficulty;
+    onBattleWon({boss:true},map());
+    return JSON.stringify({afterLoss,current:state.worldDifficulty,highest:state.highestUnlockedDifficulty});
+  })()`));
+  assert.deepStrictEqual(result, { afterLoss: "normal", current: "normal", highest: 1 });
+});
+
+test("boss progress is isolated by map and world difficulty", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    alpha041EnsureState();state.highestUnlockedDifficulty=1;
+    state.bossProgress.meadow={active:true,hp:111,maxHp:999};
+    setWorldDifficulty('hard');
+    const hardHas=!!state.bossProgress.meadow;
+    state.bossProgress.meadow={active:true,hp:222,maxHp:999};
+    setWorldDifficulty('normal');
+    return JSON.stringify({hardHas,normalHp:state.bossProgress.meadow.hp});
+  })()`));
+  assert.deepStrictEqual(result, { hardHas: false, normalHp: 111 });
+});
+
+test("mutant awakening preserves the lifelong pet and consumes only the donor", () => {
+  const context = createContext();
+  const result = JSON.parse(evaluate(context, `(()=>{
+    state.pets=[];const target=createPet('灰尾幼狼','Attack',0),donor=createPet('灰尾幼狼','Attack',0);
+    target.level=23;target.tier=7;target.initialBond=true;donor.mutant=true;donor.mutationTrait='迅捷回响';
+    state.pets=[target,donor];state.activePetId=target.id;awakenPetMutation(target.id,donor.id);
+    return JSON.stringify({count:state.pets.length,id:state.pets[0].id,level:state.pets[0].level,tier:state.pets[0].tier,bond:state.pets[0].initialBond,trait:state.pets[0].mutationTrait});
+  })()`));
+  assert.strictEqual(result.count, 1);
+  assert.strictEqual(result.level, 23);
+  assert.strictEqual(result.tier, 7);
+  assert.strictEqual(result.bond, true);
+  assert.strictEqual(result.trait, "迅捷回响");
 });
 
 test("long deterministic battle run keeps core state finite", () => {
@@ -655,8 +698,8 @@ test("long deterministic battle run keeps core state finite", () => {
     finite: true,
     nonnegative: true,
     started: true,
-    version: "0.40.0",
+    version: "0.41.0",
   });
 });
 
-console.log("\nAlpha 0.40 regression suite passed.");
+console.log("\nAlpha 0.41 regression suite passed.");
