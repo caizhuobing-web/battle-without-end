@@ -117,6 +117,25 @@ h1 {
 .battle {
   padding: 7px;
 }
+.battle-panel-wrap,
+#battle-panel,
+.battle-live-root,
+.log-dock {
+  overflow-anchor: none;
+}
+.battle-pet-role {
+  min-height: 18px;
+  margin-top: 6px;
+}
+.battle-enemy-mechanics {
+  min-height: 82px;
+  overflow: hidden;
+}
+.battle-enemy-special,
+.battle-enemy-status {
+  min-height: 18px;
+  margin-top: 6px;
+}
 .combatant {
   border: 1px solid #554830;
   background: #17140f;
@@ -598,9 +617,13 @@ details.mini .help-body {
   border: 1px solid var(--line);
   background: rgba(18, 16, 13, 0.97);
   margin-top: 5px;
-  max-height: 19vh;
+  height: 160px;
+  min-height: 160px;
+  max-height: 160px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  contain: layout paint;
   box-shadow: 0 5px 18px #0008;
   backdrop-filter: blur(8px);
 }
@@ -639,11 +662,16 @@ details.mini .help-body {
   background: #40331f;
 }
 .log-stream {
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  -webkit-overflow-scrolling: touch;
   padding: 4px 6px;
   font-size: 10px;
   line-height: 1.35;
-  min-height: 26px;
 }
 .log-stream > div {
   margin-bottom: 2px;
@@ -714,7 +742,7 @@ details.mini .help-body {
 }
 @media (max-width: 850px) {
   html {
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
   body {
     font-size: 14px;
@@ -780,7 +808,9 @@ details.mini .help-body {
   }
   .log-dock {
     margin-top: 3px;
-    max-height: 18vh;
+    height: 124px;
+    min-height: 124px;
+    max-height: 124px;
     border-radius: 4px;
   }
   .log-toolbar {
@@ -796,6 +826,8 @@ details.mini .help-body {
     font-size: 8px;
   }
   .log-stream {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 3px 4px;
     font-size: 8.5px;
     line-height: 1.28;
@@ -814,6 +846,33 @@ details.mini .help-body {
     padding: 5px 6px;
     margin-bottom: 4px;
     border-radius: 5px;
+  }
+  .battle-pet-role {
+    height: 14px;
+    min-height: 14px;
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .battle-enemy-mechanics {
+    height: 72px;
+    min-height: 72px;
+  }
+  .battle-enemy-mechanics .ecology-status-044 {
+    height: 36px;
+    margin-top: 4px;
+    padding: 4px 5px;
+    overflow: hidden;
+  }
+  .battle-enemy-special,
+  .battle-enemy-status {
+    height: 14px;
+    min-height: 14px;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .big-name {
     font-size: 13px;

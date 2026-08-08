@@ -92,7 +92,7 @@ const PET_TIER_INSTINCTS = {
 
 /* ===== core-01.js ===== */
 ("use strict");
-const VERSION = "0.45.2";
+const VERSION = "0.45.3";
 const SAVE_KEY = "bwe-core-alpha-041";
 const SAFE_BACKUP_KEY = "bwe-core-safe-backup-v1";
 const ALPHA040_SAVE_KEY = "bwe-core-alpha-040";
@@ -3158,7 +3158,7 @@ function renderLogControls() {
   )
     .map(
       ([k, n]) =>
-        `<button class="${f[k] ? "active" : ""}" onclick="toggleLogFilter('${k}')">${n}</button>`,
+        `<button data-log-filter="${k}" class="${f[k] ? "active" : ""}" onclick="toggleLogFilter('${k}')">${n}</button>`,
     )
     .join(
       "",
@@ -3169,16 +3169,38 @@ function renderLogControls() {
 function renderLogOnly() {
   const dock = document.getElementById("log-dock");
   if (!dock) return;
-  dock.innerHTML =
-    renderLogControls() +
-    `<div class="log-stream">${
-      filteredLogs()
-        .map(
-          (x) =>
-            `<div class="${x.cls} cat-${x.category || inferLogCategory(x.msg, x.cls)}">${x.msg}</div>`,
-        )
-        .join("") || '<div class="muted">当前筛选没有日志。</div>'
-    }</div>`;
+  let toolbar = dock.querySelector?.(".log-toolbar");
+  let stream = dock.querySelector?.(".log-stream");
+  if (!toolbar || !stream) {
+    dock.innerHTML = `${renderLogControls()}<div class="log-stream"></div>`;
+    toolbar = dock.querySelector?.(".log-toolbar");
+    stream = dock.querySelector?.(".log-stream");
+  }
+  if (!stream) return;
+
+  const filters = ensureLogFilters();
+  toolbar?.querySelectorAll?.("[data-log-filter]").forEach((button) => {
+    button.classList.toggle("active", !!filters[button.dataset.logFilter]);
+  });
+
+  const html =
+    filteredLogs()
+      .map(
+        (x) =>
+          `<div class="${x.cls} cat-${x.category || inferLogCategory(x.msg, x.cls)}">${x.msg}</div>`,
+      )
+      .join("") || '<div class="muted">当前筛选没有日志。</div>';
+  if (stream.innerHTML === html) return;
+
+  // New entries are inserted at the top. Stay pinned to the newest record when
+  // the player is already there; otherwise compensate for the added content so
+  // a player reading older entries is not pulled away from that position.
+  const oldTop = stream.scrollTop || 0;
+  const oldHeight = stream.scrollHeight || 0;
+  const pinnedToNewest = oldTop <= 2;
+  stream.innerHTML = html;
+  if (pinnedToNewest) stream.scrollTop = 0;
+  else stream.scrollTop = oldTop + Math.max(0, (stream.scrollHeight || 0) - oldHeight);
 }
 function map() {
   return MAPS.find((x) => x.id === state.mapId);
@@ -6617,7 +6639,7 @@ resetGame = function () {
 /* ===== core-13.js ===== */
 function renderStart() {
   const app = document.getElementById("app");
-  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.45.2</h1><p class="subtitle">五分钟做构筑 · 全天自动刷宝</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
+  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.45.3</h1><p class="subtitle">五分钟做构筑 · 全天自动刷宝</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
     (id) => {
       const r = RACES[id];
       return `<div class="choice race" data-id="${id}" onclick="selectStart('race','${id}')"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">${r.traitName}：${r.traitDesc}</div>${miniDetail("属性倍率", identityGrowthText(r))}</div>`;
@@ -6771,7 +6793,7 @@ function render(preserveUi = true) {
     e = state.enemy,
     p = activePet();
   document.getElementById("app").innerHTML =
-    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.45.2</h1><div class="subtitle">五分钟做构筑 · 全天自动刷宝</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
+    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.45.3</h1><div class="subtitle">五分钟做构筑 · 全天自动刷宝</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
       .map(
         (x) =>
           `<div class="${x.cls} cat-${x.category || inferLogCategory(x.msg, x.cls)}">${x.msg}</div>`,
@@ -6792,7 +6814,7 @@ function render(preserveUi = true) {
       )
       .join(
         "",
-      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.45.2：高难度Boss可掉落更高初始阶级宠物。</div></div>`;
+      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.45.3：战斗界面稳定性修正。</div></div>`;
   mainContentDirty = false;
   updateResourceBar();
   renderBattleOnly();
@@ -6807,7 +6829,79 @@ function renderBattleOnly() {
     e = state.enemy,
     p = activePet(),
     ps = p ? petStats(p) : null;
-  el.innerHTML = `<div class="battle"><div class="combatant ${playerAlive() ? "" : "party-down"}"><div class="name-row"><span class="big-name">${RACES[state.race].icon}${state.name} Lv.${state.level}</span><span class="badge">${STYLES[state.style].name}</span></div><div class="bar"><div class="fill hp" style="width:${clamp((state.hp / s.maxHp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(state.hp))}/${s.maxHp}</span></div><div class="bar"><div class="fill mp" style="width:${clamp((state.mp / s.maxMp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(state.mp))}/${s.maxMp}</span></div><div class="stats-mini"><div>攻击 ${s.atk}</div><div>防御 ${s.def}</div><div>速度 ${s.speed}</div></div></div>${p ? `<div class="combatant ${petAlive(p) ? "" : "party-down"}"><div class="name-row"><span class="big-name">${petSpeciesIcon(p)}${p.tier || 1}阶 ${p.mutant ? '<span class="mutant-x">变异 X</span> ' : ""}${p.name} Lv.${p.level}</span><span class="badge">${PET_TYPES[p.type].name} · ${petOverallGrade(p)}</span></div><div class="bar"><div class="fill hp" style="width:${clamp(((p.hp || 0) / ps.maxHp) * 100, 0, 100)}%"></div><span>${Math.max(0, Math.round(p.hp || 0))}/${ps.maxHp}</span></div><div class="stats-mini"><div>攻击 ${ps.atk}</div><div>防御 ${ps.def}</div><div>魔力 ${ps.magic}</div></div><div class="muted" style="margin-top:6px">${petRoleStatus(p)}</div></div>` : '<div class="combatant"><div class="muted">尚未获得出战宠物。区域Boss可能掉落宠物。</div></div>'}<div class="combatant"><div class="name-row"><span class="big-name">${e ? e.name : "寻找敌人"} ${e ? "Lv." + e.level : ""}</span><span class="badge">${e ? `${e.ecologyIcon || ""}${e.ecologyName ? ` ${e.ecologyName} ·` : ""} CP ${e.cp} · 威胁T${e.threatTier || 0}` : ""}</span></div><div class="bar"><div class="fill hp" style="width:${e ? clamp((e.hp / e.maxHp) * 100, 0, 100) : 0}%"></div><span>${e ? Math.max(0, Math.round(e.hp)) + "/" + e.maxHp : ""}</span></div><div class="stats-mini"><div>攻击 ${e?.atk || 0}</div><div>防御 ${e?.def || 0}</div><div>速度 ${e?.speed || 0}</div></div>${e?.ecologyDesc ? `<div class="compact-meta ecology-status-044"><b>${e.ecologyIcon} ${e.ecologyName}：</b>${e.ecologyDesc}</div>` : ""}${e?.treasure ? '<div class="compact-meta" style="margin-top:6px"><b>稀有宝箱怪：</b>基础金币×100</div>' : e?.bossPrefixId && e.bossPrefixId !== "none" ? `<div class="compact-meta" style="margin-top:6px"><b>${e.bossPrefixName}前缀：</b>${e.bossPrefixDesc} 金币×${Number(e.bossGoldMult || 1).toFixed(2)}</div>` : ""}${(e?.petArmorBreakTurns || 0) > 0 || (e?.petWeakenTurns || 0) > 0 || (e?.skillArmorBreakTurns || 0) > 0 ? `<div class="muted" style="margin-top:6px">${(e.petArmorBreakTurns || 0) > 0 ? "宠物破甲 " : ""}${(e.petWeakenTurns || 0) > 0 ? "衰弱 " : ""}${(e.skillArmorBreakTurns || 0) > 0 ? "蚀骨破甲" : ""}</div>` : ""}</div>${renderDefeatReport()}</div>`;
+  const structureKey = p ? "pet" : "no-pet";
+  if (el.dataset.structureKey !== structureKey) {
+    el.dataset.structureKey = structureKey;
+    el.innerHTML = `<div class="battle battle-live-root">
+      <div id="live-player-card" class="combatant"><div class="name-row"><span id="live-player-name" class="big-name"></span><span id="live-player-style" class="badge"></span></div><div class="bar"><div id="live-player-hp-fill" class="fill hp"></div><span id="live-player-hp"></span></div><div class="bar"><div id="live-player-mp-fill" class="fill mp"></div><span id="live-player-mp"></span></div><div class="stats-mini"><div id="live-player-atk"></div><div id="live-player-def"></div><div id="live-player-speed"></div></div></div>
+      ${p ? `<div id="live-pet-card" class="combatant"><div class="name-row"><span id="live-pet-name" class="big-name"></span><span id="live-pet-badge" class="badge"></span></div><div class="bar"><div id="live-pet-hp-fill" class="fill hp"></div><span id="live-pet-hp"></span></div><div class="stats-mini"><div id="live-pet-atk"></div><div id="live-pet-def"></div><div id="live-pet-magic"></div></div><div id="live-pet-role" class="muted battle-pet-role"></div></div>` : '<div id="live-pet-card" class="combatant battle-empty-pet"><div class="muted">尚未获得出战宠物。区域Boss可能掉落宠物。</div></div>'}
+      <div id="live-enemy-card" class="combatant battle-enemy-card"><div class="name-row"><span id="live-enemy-name" class="big-name"></span><span id="live-enemy-badge" class="badge"></span></div><div class="bar"><div id="live-enemy-hp-fill" class="fill hp"></div><span id="live-enemy-hp"></span></div><div class="stats-mini"><div id="live-enemy-atk"></div><div id="live-enemy-def"></div><div id="live-enemy-speed"></div></div><div class="battle-enemy-mechanics"><div id="live-enemy-ecology" class="compact-meta ecology-status-044"></div><div id="live-enemy-special" class="compact-meta battle-enemy-special"></div><div id="live-enemy-status" class="muted battle-enemy-status"></div></div></div>
+      <div class="defeat-report-slot"><button id="live-defeat-trigger" class="defeat-report-trigger" type="button" onclick="toggleDefeatReport()"><span><b>战败诊断</b><small id="live-defeat-summary"></small></span><i id="live-defeat-action"></i></button></div>
+      <div id="live-defeat-overlay" class="defeat-report-overlay" hidden onclick="if(event.target===this)toggleDefeatReport(false)"><section class="defeat-report-sheet" role="dialog" aria-modal="true" aria-labelledby="defeat-report-title"><div class="defeat-report-head"><div><b id="defeat-report-title"></b><span id="live-defeat-meta"></span></div><button type="button" class="defeat-report-close" onclick="toggleDefeatReport(false)" aria-label="关闭战败诊断">关闭</button></div><div id="live-defeat-body" class="defeat-report-body"></div></section></div>
+    </div>`;
+  }
+
+  const byId = (id) => document.getElementById(id),
+    setText = (id, value) => {
+      const node = byId(id), next = String(value ?? "");
+      if (node && node.textContent !== next) node.textContent = next;
+    },
+    setHtml = (id, value) => {
+      const node = byId(id), next = String(value ?? "");
+      if (node && node.innerHTML !== next) node.innerHTML = next;
+    },
+    setWidth = (id, value) => {
+      const node = byId(id), next = `${clamp(Number(value || 0), 0, 100)}%`;
+      if (node && node.style.width !== next) node.style.width = next;
+    };
+
+  byId("live-player-card")?.classList.toggle("party-down", !playerAlive());
+  setText("live-player-name", `${RACES[state.race].icon}${state.name} Lv.${state.level}`);
+  setText("live-player-style", STYLES[state.style].name);
+  setWidth("live-player-hp-fill", (state.hp / s.maxHp) * 100);
+  setText("live-player-hp", `${Math.max(0, Math.round(state.hp))}/${s.maxHp}`);
+  setWidth("live-player-mp-fill", (state.mp / s.maxMp) * 100);
+  setText("live-player-mp", `${Math.max(0, Math.round(state.mp))}/${s.maxMp}`);
+  setText("live-player-atk", `攻击 ${s.atk}`);
+  setText("live-player-def", `防御 ${s.def}`);
+  setText("live-player-speed", `速度 ${s.speed}`);
+
+  if (p && ps) {
+    byId("live-pet-card")?.classList.toggle("party-down", !petAlive(p));
+    setHtml("live-pet-name", `${petSpeciesIcon(p)}${p.tier || 1}阶 ${p.mutant ? '<span class="mutant-x">变异 X</span> ' : ""}${p.name} Lv.${p.level}`);
+    setText("live-pet-badge", `${PET_TYPES[p.type].name} · ${petOverallGrade(p)}`);
+    setWidth("live-pet-hp-fill", ((p.hp || 0) / ps.maxHp) * 100);
+    setText("live-pet-hp", `${Math.max(0, Math.round(p.hp || 0))}/${ps.maxHp}`);
+    setText("live-pet-atk", `攻击 ${ps.atk}`);
+    setText("live-pet-def", `防御 ${ps.def}`);
+    setText("live-pet-magic", `魔力 ${ps.magic}`);
+    setText("live-pet-role", petRoleStatus(p));
+  }
+
+  setText("live-enemy-name", `${e ? e.name : "寻找敌人"}${e ? ` Lv.${e.level}` : ""}`);
+  setText("live-enemy-badge", e ? `${e.ecologyIcon || ""}${e.ecologyName ? ` ${e.ecologyName} ·` : ""} CP ${e.cp} · 威胁T${e.threatTier || 0}` : "");
+  setWidth("live-enemy-hp-fill", e ? (e.hp / e.maxHp) * 100 : 0);
+  setText("live-enemy-hp", e ? `${Math.max(0, Math.round(e.hp))}/${e.maxHp}` : "");
+  setText("live-enemy-atk", `攻击 ${e?.atk || 0}`);
+  setText("live-enemy-def", `防御 ${e?.def || 0}`);
+  setText("live-enemy-speed", `速度 ${e?.speed || 0}`);
+  setHtml("live-enemy-ecology", e?.ecologyDesc ? `<b>${e.ecologyIcon} ${e.ecologyName}：</b>${e.ecologyDesc}` : "");
+  setHtml("live-enemy-special", e?.treasure ? '<b>稀有宝箱怪：</b>基础金币×100' : e?.bossPrefixId && e.bossPrefixId !== "none" ? `<b>${e.bossPrefixName}前缀：</b>${e.bossPrefixDesc} 金币×${Number(e.bossGoldMult || 1).toFixed(2)}` : "");
+  setText("live-enemy-status", `${(e?.petArmorBreakTurns || 0) > 0 ? "宠物破甲 " : ""}${(e?.petWeakenTurns || 0) > 0 ? "衰弱 " : ""}${(e?.skillArmorBreakTurns || 0) > 0 ? "蚀骨破甲" : ""}`);
+
+  const report = state.lastDefeatReport,
+    trigger = byId("live-defeat-trigger"),
+    overlay = byId("live-defeat-overlay");
+  if (trigger) {
+    trigger.disabled = !report;
+    trigger.setAttribute?.("aria-expanded", String(!!report && defeatReportOpen));
+  }
+  setText("live-defeat-summary", report ? `${report.primary} · ${report.enemy}剩余${report.enemyHpPct}%` : "战败后生成针对性建议");
+  setText("live-defeat-action", report ? defeatReportOpen ? "收起" : "查看" : "暂无");
+  if (overlay) overlay.hidden = !report || !defeatReportOpen;
+  setText("defeat-report-title", report ? `上次战败诊断：${report.primary}` : "战败诊断");
+  setText("live-defeat-meta", report ? `${report.enemy} · 剩余${report.enemyHpPct}% · ${report.rounds}回合` : "");
+  setHtml("live-defeat-body", report ? report.reasons.map((x) => `<div><b>${x.name}</b>：${x.advice}</div>`).join("") : "");
   renderLogOnly();
 }
 

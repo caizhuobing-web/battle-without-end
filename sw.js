@@ -1,4 +1,4 @@
-const CACHE_NAME = "bwe-alpha-0452-v1";
+const CACHE_NAME = "bwe-alpha-0453-v4";
 const CORE = [
   "./",
   "./index.html",

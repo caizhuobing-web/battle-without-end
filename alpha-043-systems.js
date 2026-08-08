@@ -3,7 +3,7 @@
   "use strict";
   if (typeof state === "undefined" || typeof battleTick !== "function") return;
 
-  const SPEEDS_043 = [1, 2, 4];
+  const SPEEDS_043 = [1, 2, 4, 10, 20];
   const LIVE_TICK_MS_043 = 650;
   // Offline play resolves one representative encounter every 45 seconds.
   // It is intentionally independent from the live animation speed so a
@@ -110,7 +110,7 @@
   };
   window.renderAlpha043BattleControls = function () {
     ensureAlpha043State();
-    return `<button onclick="toggleBattleRunning()">${state.running ? "暂停战斗" : "继续战斗"}</button><span class="speed-label">在线速度</span>${SPEEDS_043.map((speed) => `<button class="speed-button ${state.battleSpeed === speed ? "active" : ""}" onclick="setBattleSpeed(${speed})">×${speed}</button>`).join("")}`;
+    return `<button onclick="toggleBattleRunning()">${state.running ? "暂停战斗" : "继续战斗"}</button><span class="speed-label">在线速度</span>${SPEEDS_043.map((speed) => `<button class="speed-button ${state.battleSpeed === speed ? "active" : ""}" onclick="setBattleSpeed(${speed})" aria-pressed="${state.battleSpeed === speed}" title="${speed >= 10 ? "测试速度 · " : ""}每回合约${Math.round(LIVE_TICK_MS_043 / speed)}毫秒">×${speed}</button>`).join("")}`;
   };
 
   const coreBattleTick043 = battleTick;

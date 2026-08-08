@@ -40,6 +40,7 @@ function element(id = "") {
     innerHTML: "",
     textContent: "",
     scrollTop: 0,
+    scrollHeight: 0,
     open: false,
     parentElement: null,
     style: {},
@@ -154,7 +155,7 @@ test("all browser scripts parse and load in index order", () => {
   const context = createContext();
   const startTitle = evaluate(
     context,
-    `(()=>{renderStart();return document.getElementById('app').innerHTML.includes('无尽战域：Alpha 0.45.2')})()`,
+    `(()=>{renderStart();return document.getElementById('app').innerHTML.includes('无尽战域：Alpha 0.45.3')})()`,
   );
   assert.strictEqual(startTitle, true);
 });
@@ -421,7 +422,7 @@ test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level
       `JSON.stringify({version:state.version,hasSoul:Object.prototype.hasOwnProperty.call(state,'soul'),pet:state.pets[0]&&{tier:state.pets[0].tier,evolutionXp:state.pets[0].evolutionXp,level:state.pets[0].level,xp:state.pets[0].xp,baseSpecies:state.pets[0].baseSpecies,investment:state.pets[0].fusionInvestedXp}})`,
     ),
   );
-  assert.strictEqual(migrated.version, "0.45.2");
+  assert.strictEqual(migrated.version, "0.45.3");
   assert.strictEqual(migrated.hasSoul, false);
   assert.deepStrictEqual(
     {
@@ -454,7 +455,7 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
     ),
   );
   assert.deepStrictEqual(migrated, {
-    version: "0.45.2",
+    version: "0.45.3",
     guardian: true,
     inherited: 138,
     bossBuildPreset: null,
@@ -469,7 +470,7 @@ test("0.40 save migrates all critical progress without overwriting the source", 
   const raw = JSON.stringify(oldSave);
   const context = createContext({ "bwe-core-alpha-040": raw });
   const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,inventory:state.inventory.length,bossHp:state.bossProgress.meadow.hp,capacity:state.inventoryCapacity,has041:!!localStorage.getItem('bwe-core-alpha-041'),source:localStorage.getItem('bwe-core-alpha-040')})`));
-  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,inventory:result.inventory,bossHp:result.bossHp,capacity:result.capacity},{version:"0.45.2",level:73,xp:1234,gold:45678,difficulty:"expert",highest:4,inventory:1,bossHp:321,capacity:120});
+  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,inventory:result.inventory,bossHp:result.bossHp,capacity:result.capacity},{version:"0.45.3",level:73,xp:1234,gold:45678,difficulty:"expert",highest:4,inventory:1,bossHp:321,capacity:120});
   assert.strictEqual(result.has041, true);
   assert.strictEqual(result.source, raw);
 });
@@ -479,7 +480,7 @@ test("0.41 save under the stable key is accepted and migrated in place", () => {
   const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.41.0';d.started=true;d.level=88;d.xp=777;d.gold=65432;d.worldDifficulty='torment2';d.highestUnlockedDifficulty=5;delete d.bossState;d.inventoryCapacity=40;return JSON.stringify(d)})()`));
   const context = createContext({ "bwe-core-alpha-041": JSON.stringify(oldSave) });
   const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,bossState:state.bossState,capacity:state.inventoryCapacity})`));
-  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,capacity:result.capacity},{version:"0.45.2",level:88,xp:777,gold:65432,difficulty:"torment2",highest:5,capacity:120});
+  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,capacity:result.capacity},{version:"0.45.3",level:88,xp:777,gold:65432,difficulty:"torment2",highest:5,capacity:120});
   assert.deepStrictEqual(result.bossState, {});
 });
 
@@ -489,7 +490,7 @@ test("0.42.1 save gains 0.43 idle and loot fields without losing progress", () =
   const context = createContext({ "bwe-core-alpha-041": oldSave });
   const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,speed:state.battleSpeed,autoLoot:state.autoLoot,feedback:state.lootFeedback,highlights:state.lootHighlights,lastOfflineReport:state.lastOfflineReport})`));
   assert.deepStrictEqual(result, {
-    version: "0.45.2",
+    version: "0.45.3",
     level: 96,
     xp: 4321,
     gold: 76543,
@@ -509,7 +510,7 @@ test("0.44 save migrates its active pet into the 0.45 lifelong companion model",
   const context = createContext({ "bwe-core-alpha-041": oldSave });
   const result = JSON.parse(evaluate(context, `(()=>{const p=state.pets[0],r=state.petCodex045['灰尾幼狼'];return JSON.stringify({version:state.version,level:state.level,gold:state.gold,id:p.id,petLevel:p.level,tier:p.tier,name:p.name,initial:p.initialBond,locked:p.locked,mutation:p.mutationTrait,branch:p.evolutionBranches.stage6,found:r.found,highest:r.highestTier})})()`));
   assert.deepStrictEqual(result, {
-    version: "0.45.2",
+    version: "0.45.3",
     level: 111,
     gold: 88888,
     id: "legacy-main",
@@ -530,7 +531,7 @@ test("future-version saves are rejected instead of being parsed by an older buil
   const future = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='1.0.0';d.started=true;d.level=99;return JSON.stringify(d)})()`));
   const context = createContext({ "bwe-core-alpha-041": JSON.stringify(future) });
   const result = JSON.parse(evaluate(context, `JSON.stringify({started:state.started,level:state.level,version:state.version})`));
-  assert.deepStrictEqual(result, {started:false,level:1,version:"0.45.2"});
+  assert.deepStrictEqual(result, {started:false,level:1,version:"0.45.3"});
 });
 
 test("validated saves reject corrupt fields and never relabel future imports", () => {
@@ -570,7 +571,7 @@ test("a corrupt main save falls back to the last valid safety backup", () => {
   const result = JSON.parse(evaluate(context, `(()=>{
     const ok=load();return JSON.stringify({ok,level:state.level,xp:state.xp,gold:state.gold,version:state.version,mainValid:!!parseValidatedSave(localStorage.getItem(SAVE_KEY)).data});
   })()`));
-  assert.deepStrictEqual(result, { ok: true, level: 26, xp: 123, gold: 456, version: "0.45.2", mainValid: true });
+  assert.deepStrictEqual(result, { ok: true, level: 26, xp: 123, gold: 456, version: "0.45.3", mainValid: true });
 });
 
 test("background settlement supports a 24-hour campaign without a parallel reward formula", () => {
@@ -749,6 +750,78 @@ test("defeat diagnosis keeps a fixed compact slot and opens details only on dema
     closedOverlay: false,
     openedOverlay: true,
     openedAdvice: true,
+  });
+});
+
+test("0.45.3 battle and log docks preserve their roots and fixed geometry", () => {
+  const context = createContext();
+  const result = JSON.parse(
+    evaluate(
+      context,
+      `(()=>{
+        startGame();state.running=false;
+        const panel=document.getElementById('battle-panel');
+        const first=panel.innerHTML;
+        renderBattleOnly();
+        const second=panel.innerHTML;
+        state.hp=Math.max(1,state.hp-1);state.enemy.hp=Math.max(1,state.enemy.hp-1);
+        renderBattleOnly();
+        return JSON.stringify({stable:first===second&&second===panel.innerHTML,key:panel.dataset.structureKey,hasMechanics:first.includes('battle-enemy-mechanics')});
+      })()`,
+    ),
+  );
+  const css = read("game.css");
+  assert.deepStrictEqual(result, {
+    stable: true,
+    key: "pet",
+    hasMechanics: true,
+  });
+  assert(css.includes(".battle-live-root,\n.log-dock {\n  overflow-anchor: none;"));
+  assert(css.includes("scroll-behavior: auto;"));
+  assert(css.includes("height: 160px;\n  min-height: 160px;\n  max-height: 160px;"));
+  assert(css.includes("height: 124px;\n    min-height: 124px;\n    max-height: 124px;"));
+  assert(css.includes("overscroll-behavior: contain;"));
+  assert(css.includes("height: 72px;"));
+  const core = read("game-core.js");
+  assert(core.includes('dock.querySelector?.(".log-toolbar")'));
+  assert(core.includes('dock.querySelector?.(".log-stream")'));
+  assert(core.includes('button.dataset.logFilter'));
+  assert(!core.includes('if (dock.innerHTML !== html) dock.innerHTML = html;'));
+});
+
+test("0.45.3 log updates keep the dock and toolbar while preserving internal reading position", () => {
+  const context = createContext();
+  const result = JSON.parse(
+    evaluate(
+      context,
+      `(()=>{
+        const buttons=["damage","defense","loot","important","system"].map((key)=>({dataset:{logFilter:key},active:false,classList:{toggle(name,on){if(name==="active")this.owner.active=on},owner:null}}));
+        buttons.forEach((button)=>button.classList.owner=button);
+        const toolbar={querySelectorAll(){return buttons}};
+        let streamWrites=0,dockWrites=0;
+        const stream={scrollTop:0,scrollHeight:100,_inner:""};
+        Object.defineProperty(stream,"innerHTML",{get(){return this._inner},set(value){this._inner=value;streamWrites++;this.scrollHeight=100+(value.match(/cat-/g)||[]).length*20}});
+        const dock={querySelector(selector){return selector===".log-toolbar"?toolbar:selector===".log-stream"?stream:null}};
+        Object.defineProperty(dock,"innerHTML",{get(){return ""},set(){dockWrites++}});
+        const originalGet=document.getElementById;
+        document.getElementById=(id)=>id==="log-dock"?dock:originalGet(id);
+        state.logFilters={damage:false,defense:false,loot:true,important:true,system:true};
+        state.log=[{msg:"旧记录",cls:"important",category:"important"}];
+        renderLogOnly();
+        stream.scrollTop=20;
+        state.log.unshift({msg:"新记录",cls:"important",category:"important"});
+        renderLogOnly();
+        setAllLogMode();
+        return JSON.stringify({dockWrites,streamWrites,scrollTop:stream.scrollTop,allActive:buttons.every((button)=>button.active),toolbarKept:dock.querySelector(".log-toolbar")===toolbar});
+      })()`,
+    ),
+  );
+  assert.deepStrictEqual(result, {
+    dockWrites: 0,
+    streamWrites: 2,
+    scrollTop: 40,
+    allActive: true,
+    toolbarKept: true,
   });
 });
 
@@ -1015,16 +1088,23 @@ test("mutant awakening preserves the lifelong pet and consumes only the donor", 
   assert.strictEqual(result.trait, "迅捷回响");
 });
 
-test("0.43 exposes selectable live speeds and bounds the 24-hour offline campaign", () => {
+test("0.45.3 exposes x10/x20 test speeds without changing offline settlement", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
-    state.battleSpeed=4;alpha043EnsureState();
+    const intervals=[];
+    setInterval=(_,ms)=>{intervals.push(ms);return intervals.length+10};
+    state.started=true;state.running=true;
+    state.battleSpeed=10;alpha043EnsureState();alpha043RestartBattleTimer();
+    state.battleSpeed=20;alpha043EnsureState();alpha043RestartBattleTimer();
     const controls=renderAlpha043BattleControls();
-    return JSON.stringify({version:VERSION,speed:state.battleSpeed,offline:alpha043OfflineBattleCount(24*60*60*1000),buttons:[1,2,4].every(x=>controls.includes('×'+x))});
+    state.battleSpeed=8;alpha043EnsureState();
+    return JSON.stringify({version:VERSION,speed20:controls.includes('aria-pressed="true" title="测试速度 · 每回合约33毫秒">×20'),fallback:state.battleSpeed,intervals,offline:alpha043OfflineBattleCount(24*60*60*1000),buttons:[1,2,4,10,20].every(x=>controls.includes('×'+x))});
   })()`));
   assert.deepStrictEqual(result, {
-    version: "0.45.2",
-    speed: 4,
+    version: "0.45.3",
+    speed20: true,
+    fallback: 1,
+    intervals: [65, 33],
     offline: 1920,
     buttons: true,
   });
@@ -1115,7 +1195,7 @@ test("compressed offline campaign remains finite across 1000 resolved battles", 
     finite: true,
     nonnegative: true,
     battles: 1000,
-    version: "0.45.2",
+    version: "0.45.3",
   });
 });
 
@@ -1229,8 +1309,8 @@ test("long deterministic battle run keeps core state finite", () => {
     finite: true,
     nonnegative: true,
     started: true,
-    version: "0.45.2",
+    version: "0.45.3",
   });
 });
 
-console.log("\nAlpha 0.45.2 regression suite passed.");
+console.log("\nAlpha 0.45.3 regression suite passed.");
