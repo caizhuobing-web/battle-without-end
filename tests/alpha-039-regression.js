@@ -155,7 +155,7 @@ test("all browser scripts parse and load in index order", () => {
   const context = createContext();
   const startTitle = evaluate(
     context,
-    `(()=>{renderStart();return document.getElementById('app').innerHTML.includes('无尽战域：Alpha 0.45.3.1')})()`,
+    `(()=>{renderStart();return document.getElementById('app').innerHTML.includes('无尽战域：Alpha 0.45.4')})()`,
   );
   assert.strictEqual(startTitle, true);
 });
@@ -317,7 +317,7 @@ test("Boss prefix weights and global loot multipliers match the GM curve", () =>
     evaluate(
       context,
       `(()=>{
-  startGame();state.running=false;state.highestUnlockedDifficulty=4;setWorldDifficulty('torment1');Math.random=()=>.999;
+  startGame();state.running=false;state.highestUnlockedDifficulty=5;setWorldDifficulty('torment1');Math.random=()=>.999;
   const boss=makeEnemy(true),baseIdentity=identityDropChance(1),boostedIdentity=identityDropChance(boss.bossLootMult);
   Math.random=()=>.005;const baseMutation=rollPetMutation(map(),1),boostedMutation=rollPetMutation(map(),boss.bossLootMult);
   return JSON.stringify({weight:BOSS_PREFIXES.reduce((n,x)=>n+x.w,0),id:boss.bossPrefixId,loot:boss.bossLootMult,gold:boss.bossGoldMult,name:boss.name,identityRatio:boostedIdentity/baseIdentity,baseMutation,boostedMutation});
@@ -410,7 +410,7 @@ test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level
   const oldSave = JSON.parse(
     evaluate(
       source,
-      `(()=>{const d=fresh(),p=createPet('灰尾幼狼','Attack',0);d.version='0.38.0';d.soul=77;p.tier=4;p.evolutionXp=17;p.level=8;p.xp=11;delete p.fusionInvestedXp;d.pets=[p];d.activePetId=p.id;return JSON.stringify(d)})()`,
+      `(()=>{const d=fresh(),p=createPet('灰尾幼狼','Attack',0);d.version='0.38.0';delete d.difficultyRosterVersion;d.soul=77;p.tier=4;p.evolutionXp=17;p.level=8;p.xp=11;delete p.fusionInvestedXp;d.pets=[p];d.activePetId=p.id;return JSON.stringify(d)})()`,
     ),
   );
   const context = createContext({
@@ -422,7 +422,7 @@ test("0.38 save migrates without Soul and keeps pet tier, evolution XP and level
       `JSON.stringify({version:state.version,hasSoul:Object.prototype.hasOwnProperty.call(state,'soul'),pet:state.pets[0]&&{tier:state.pets[0].tier,evolutionXp:state.pets[0].evolutionXp,level:state.pets[0].level,xp:state.pets[0].xp,baseSpecies:state.pets[0].baseSpecies,investment:state.pets[0].fusionInvestedXp}})`,
     ),
   );
-  assert.strictEqual(migrated.version, "0.45.3");
+  assert.strictEqual(migrated.version, "0.45.4");
   assert.strictEqual(migrated.hasSoul, false);
   assert.deepStrictEqual(
     {
@@ -442,7 +442,7 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
   const oldSave = JSON.parse(
     evaluate(
       source,
-      `(()=>{const d=fresh();d.version='0.39.0';d.started=true;d.style='melee';d.unlockedClasses=['melee','guardian'];d.skillUse.warrior_slash=138;delete d.bossBuildPreset;delete d.goalsClaimed;delete d.lastDefeatReport;return JSON.stringify(d)})()`,
+      `(()=>{const d=fresh();d.version='0.39.0';delete d.difficultyRosterVersion;d.started=true;d.style='melee';d.unlockedClasses=['melee','guardian'];d.skillUse.warrior_slash=138;delete d.bossBuildPreset;delete d.goalsClaimed;delete d.lastDefeatReport;return JSON.stringify(d)})()`,
     ),
   );
   const context = createContext({
@@ -455,7 +455,7 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
     ),
   );
   assert.deepStrictEqual(migrated, {
-    version: "0.45.3",
+    version: "0.45.4",
     guardian: true,
     inherited: 138,
     bossBuildPreset: null,
@@ -466,36 +466,36 @@ test("0.39 save migrates to 0.40 with profession progress and new decision state
 
 test("0.40 save migrates all critical progress without overwriting the source", () => {
   const source = createContext();
-  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.40.0';d.started=true;d.race='human';d.style='melee';d.level=73;d.xp=1234;d.gold=45678;d.worldDifficulty='expert';d.highestUnlockedDifficulty=4;d.inventory=[makeItem(1,null,3,false)];d.bossProgress={meadow:{active:true,hp:321,maxHp:999}};return JSON.stringify(d)})()`));
+  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.40.0';delete d.difficultyRosterVersion;d.started=true;d.race='human';d.style='melee';d.level=73;d.xp=1234;d.gold=45678;d.worldDifficulty='expert';d.highestUnlockedDifficulty=4;d.inventory=[makeItem(1,null,3,false)];d.bossProgress={meadow:{active:true,hp:321,maxHp:999}};return JSON.stringify(d)})()`));
   const raw = JSON.stringify(oldSave);
   const context = createContext({ "bwe-core-alpha-040": raw });
   const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,inventory:state.inventory.length,bossHp:state.bossProgress.meadow.hp,capacity:state.inventoryCapacity,has041:!!localStorage.getItem('bwe-core-alpha-041'),source:localStorage.getItem('bwe-core-alpha-040')})`));
-  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,inventory:result.inventory,bossHp:result.bossHp,capacity:result.capacity},{version:"0.45.3",level:73,xp:1234,gold:45678,difficulty:"expert",highest:4,inventory:1,bossHp:321,capacity:120});
+  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,inventory:result.inventory,bossHp:result.bossHp,capacity:result.capacity},{version:"0.45.4",level:73,xp:1234,gold:45678,difficulty:"expert",highest:5,inventory:1,bossHp:321,capacity:120});
   assert.strictEqual(result.has041, true);
   assert.strictEqual(result.source, raw);
 });
 
 test("0.41 save under the stable key is accepted and migrated in place", () => {
   const source = createContext();
-  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.41.0';d.started=true;d.level=88;d.xp=777;d.gold=65432;d.worldDifficulty='torment2';d.highestUnlockedDifficulty=5;delete d.bossState;d.inventoryCapacity=40;return JSON.stringify(d)})()`));
+  const oldSave = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='0.41.0';delete d.difficultyRosterVersion;d.started=true;d.level=88;d.xp=777;d.gold=65432;d.worldDifficulty='torment2';d.highestUnlockedDifficulty=5;delete d.bossState;d.inventoryCapacity=40;return JSON.stringify(d)})()`));
   const context = createContext({ "bwe-core-alpha-041": JSON.stringify(oldSave) });
-  const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,bossState:state.bossState,capacity:state.inventoryCapacity})`));
-  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,capacity:result.capacity},{version:"0.45.3",level:88,xp:777,gold:65432,difficulty:"torment2",highest:5,capacity:120});
+  const result = JSON.parse(evaluate(context, `(()=>{alpha041EnsureState();return JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,roster:state.difficultyRosterVersion,bossState:state.bossState,capacity:state.inventoryCapacity})})()`));
+  assert.deepStrictEqual({version:result.version,level:result.level,xp:result.xp,gold:result.gold,difficulty:result.difficulty,highest:result.highest,roster:result.roster,capacity:result.capacity},{version:"0.45.4",level:88,xp:777,gold:65432,difficulty:"torment2",highest:6,roster:2,capacity:120});
   assert.deepStrictEqual(result.bossState, {});
 });
 
 test("0.42.1 save gains 0.43 idle and loot fields without losing progress", () => {
   const seedContext = createContext();
-  const oldSave = evaluate(seedContext, `(()=>{const d=fresh();d.version='0.42.1';d.started=true;d.race='human';d.style='melee';d.unlockedRaces=['human'];d.unlockedClasses=['melee'];d.level=96;d.xp=4321;d.gold=76543;d.worldDifficulty='torment4';d.highestUnlockedDifficulty=7;delete d.battleSpeed;delete d.autoLoot;delete d.lootFeedback;delete d.lootHighlights;delete d.lastOfflineReport;return JSON.stringify(d)})()`);
+  const oldSave = evaluate(seedContext, `(()=>{const d=fresh();d.version='0.42.1';delete d.difficultyRosterVersion;d.started=true;d.race='human';d.style='melee';d.unlockedRaces=['human'];d.unlockedClasses=['melee'];d.level=96;d.xp=4321;d.gold=76543;d.worldDifficulty='torment4';d.highestUnlockedDifficulty=7;delete d.battleSpeed;delete d.autoLoot;delete d.lootFeedback;delete d.lootHighlights;delete d.lastOfflineReport;return JSON.stringify(d)})()`);
   const context = createContext({ "bwe-core-alpha-041": oldSave });
   const result = JSON.parse(evaluate(context, `JSON.stringify({version:state.version,level:state.level,xp:state.xp,gold:state.gold,difficulty:state.worldDifficulty,highest:state.highestUnlockedDifficulty,speed:state.battleSpeed,autoLoot:state.autoLoot,feedback:state.lootFeedback,highlights:state.lootHighlights,lastOfflineReport:state.lastOfflineReport})`));
   assert.deepStrictEqual(result, {
-    version: "0.45.3",
+    version: "0.45.4",
     level: 96,
     xp: 4321,
     gold: 76543,
     difficulty: "torment4",
-    highest: 7,
+    highest: 8,
     speed: 1,
     autoLoot: { minRarity: 0, keepUpgrades: true },
     feedback: { sound: false, haptics: true, reducedMotion: false },
@@ -506,11 +506,11 @@ test("0.42.1 save gains 0.43 idle and loot fields without losing progress", () =
 
 test("0.44 save migrates its active pet into the 0.45 lifelong companion model", () => {
   const seedContext = createContext();
-  const oldSave = evaluate(seedContext, `(()=>{const d=fresh(),p=createPet('灰尾幼狼','Attack',0);d.version='0.44.0';d.started=true;d.level=111;d.gold=88888;p.id='legacy-main';p.level=57;p.tier=10;p.mutant=true;p.mutationTrait='bossbane';p.evolutionBranches={stage3:'assault',stage6:'apex'};delete p.initialBond;delete p.lifelongPath;d.pets=[p];d.activePetId=p.id;d.petCodex={'灰尾幼狼':12};delete d.petCodex045;return JSON.stringify(d)})()`);
+  const oldSave = evaluate(seedContext, `(()=>{const d=fresh(),p=createPet('灰尾幼狼','Attack',0);d.version='0.44.0';delete d.difficultyRosterVersion;d.started=true;d.level=111;d.gold=88888;p.id='legacy-main';p.level=57;p.tier=10;p.mutant=true;p.mutationTrait='bossbane';p.evolutionBranches={stage3:'assault',stage6:'apex'};delete p.initialBond;delete p.lifelongPath;d.pets=[p];d.activePetId=p.id;d.petCodex={'灰尾幼狼':12};delete d.petCodex045;return JSON.stringify(d)})()`);
   const context = createContext({ "bwe-core-alpha-041": oldSave });
   const result = JSON.parse(evaluate(context, `(()=>{const p=state.pets[0],r=state.petCodex045['灰尾幼狼'];return JSON.stringify({version:state.version,level:state.level,gold:state.gold,id:p.id,petLevel:p.level,tier:p.tier,name:p.name,initial:p.initialBond,locked:p.locked,mutation:p.mutationTrait,branch:p.evolutionBranches.stage6,found:r.found,highest:r.highestTier})})()`));
   assert.deepStrictEqual(result, {
-    version: "0.45.3",
+    version: "0.45.4",
     level: 111,
     gold: 88888,
     id: "legacy-main",
@@ -531,7 +531,7 @@ test("future-version saves are rejected instead of being parsed by an older buil
   const future = JSON.parse(evaluate(source, `(()=>{const d=fresh();d.version='1.0.0';d.started=true;d.level=99;return JSON.stringify(d)})()`));
   const context = createContext({ "bwe-core-alpha-041": JSON.stringify(future) });
   const result = JSON.parse(evaluate(context, `JSON.stringify({started:state.started,level:state.level,version:state.version})`));
-  assert.deepStrictEqual(result, {started:false,level:1,version:"0.45.3"});
+  assert.deepStrictEqual(result, {started:false,level:1,version:"0.45.4"});
 });
 
 test("validated saves reject corrupt fields and never relabel future imports", () => {
@@ -571,7 +571,7 @@ test("a corrupt main save falls back to the last valid safety backup", () => {
   const result = JSON.parse(evaluate(context, `(()=>{
     const ok=load();return JSON.stringify({ok,level:state.level,xp:state.xp,gold:state.gold,version:state.version,mainValid:!!parseValidatedSave(localStorage.getItem(SAVE_KEY)).data});
   })()`));
-  assert.deepStrictEqual(result, { ok: true, level: 26, xp: 123, gold: 456, version: "0.45.3", mainValid: true });
+  assert.deepStrictEqual(result, { ok: true, level: 26, xp: 123, gold: 456, version: "0.45.4", mainValid: true });
 });
 
 test("background settlement supports a 24-hour campaign without a parallel reward formula", () => {
@@ -588,23 +588,23 @@ test("0.43 exposes only reachable milestone goals and explains map focus precise
   const result = JSON.parse(evaluate(context, `JSON.stringify({goalIds:PROGRESSION_GOALS.map(x=>x.id),mapHtml:renderMaps(),starterSource:String(renderStart)})`));
   assert(!result.goalIds.some((id) => id.startsWith("abyss_") || id === "threat_3" || id === "six_tier_six"));
   assert(result.goalIds.includes("difficulty_expert"));
-  assert(result.goalIds.includes("level_140"));
+  assert(result.goalIds.includes("level_150"));
   assert(result.mapHtml.includes("提高概率，非限定掉落"));
   assert(result.mapHtml.includes("不提高品质、阶级、属性或收益"));
   assert(result.starterSource.includes('querySelector(".start .controls")'));
   assert(result.starterSource.includes('insertAdjacentHTML("beforebegin", choices)'));
 });
 
-test("five permanent maps and fourteen global difficulties replace Abyss and rebirth scaling", () => {
+test("five permanent maps and fifteen global difficulties replace Abyss and rebirth scaling", () => {
   const context = createContext();
   const result = JSON.parse(
     evaluate(
       context,
-      `(()=>{state.highestUnlockedDifficulty=13;setWorldDifficulty('torment10');return JSON.stringify({maps:MAPS.map(m=>m.id),difficulties:ALPHA_041_DIFFICULTIES.length,world:worldCombatScale('meadow'),rebirths:state.rebirths})})()`,
+      `(()=>{state.highestUnlockedDifficulty=14;setWorldDifficulty('torment10');return JSON.stringify({maps:MAPS.map(m=>m.id),difficulties:ALPHA_041_DIFFICULTIES.length,world:worldCombatScale('meadow'),rebirths:state.rebirths})})()`,
     ),
   );
   assert.deepStrictEqual(result.maps, ["meadow", "hill", "forest", "shore", "ruins"]);
-  assert.strictEqual(result.difficulties, 14);
+  assert.strictEqual(result.difficulties, 15);
   assert.strictEqual(result.rebirths, 0);
   assert.deepStrictEqual(
     {
@@ -818,6 +818,18 @@ test("0.45.3 battle and log docks preserve their roots and fixed geometry", () =
   assert(!core.includes('if (dock.innerHTML !== html) dock.innerHTML = html;'));
 });
 
+test("0.45.3.2 fixes the complete enemy card and each variable content slot", () => {
+  const css = read("game.css");
+  assert(/\.battle-enemy-card\s*\{[^}]*height:\s*206px;[^}]*min-height:\s*206px;[^}]*max-height:\s*206px;[^}]*overflow:\s*hidden;/s.test(css));
+  assert(/\.battle-enemy-card \.name-row\s*\{[^}]*height:\s*22px;[^}]*min-height:\s*22px;[^}]*max-height:\s*22px;[^}]*overflow:\s*hidden;/s.test(css));
+  assert(/\.battle-enemy-mechanics\s*\{[^}]*height:\s*118px;[^}]*min-height:\s*118px;[^}]*max-height:\s*118px;/s.test(css));
+  assert(/\.battle-enemy-mechanics \.ecology-status-044\s*\{[^}]*height:\s*47px;[^}]*min-height:\s*47px;[^}]*max-height:\s*47px;/s.test(css));
+  assert(/\.battle-enemy-special\s*\{[^}]*height:\s*35px;[^}]*max-height:\s*35px;[^}]*overflow:\s*hidden;/s.test(css));
+  assert(/\.battle-enemy-status\s*\{[^}]*height:\s*18px;[^}]*max-height:\s*18px;[^}]*overflow:\s*hidden;/s.test(css));
+  assert(css.includes("text-overflow: ellipsis;"));
+  assert(css.includes("white-space: nowrap;"));
+});
+
 test("0.45.3 log updates keep the dock and toolbar while preserving internal reading position", () => {
   const context = createContext();
   const result = JSON.parse(
@@ -901,7 +913,7 @@ test("world difficulty changes only by player choice and boss victories unlock w
 test("0.45.2 world difficulty raises Boss pet drop tiers without exceeding natural Tier 6", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
-    const ids=['normal','hard','expert','master','torment1','torment2','torment3','torment4','torment5','torment6','torment7','torment8','torment9','torment10'];
+    const ids=['normal','hard','adept','expert','master','torment1','torment2','torment3','torment4','torment5','torment6','torment7','torment8','torment9','torment10'];
     const profiles=ids.map(id=>{state.worldDifficulty=id;const p=alpha0452PetDropTierProfile();return [p.guaranteed,p.promoted,Math.round(p.promotionChance*100)];});
     const roll=(id,r)=>{state.worldDifficulty=id;Math.random=()=>r;return createPet('灰尾幼狼','Attack',0).tier;};
     const rolls={normal:roll('normal',0),hardHigh:roll('hard',0),hardBase:roll('hard',0.99),master:roll('master',0),t6:roll('torment6',0.99),t10High:roll('torment10',0),t10Base:roll('torment10',0.99)};
@@ -909,7 +921,7 @@ test("0.45.2 world difficulty raises Boss pet drop tiers without exceeding natur
     return JSON.stringify({profiles,rolls,ui:ui.includes('Boss宠物初始阶级：5阶80% / 6阶20%')&&ui.includes('当前难度5阶80% / 6阶20%')});
   })()`));
   assert.deepStrictEqual(result.profiles, [
-    [1,2,0],[1,2,20],[1,2,40],
+    [1,2,0],[1,2,20],[1,2,30],[1,2,40],
     [2,3,0],[2,3,20],[2,3,40],
     [3,4,0],[3,4,20],[3,4,40],
     [4,5,0],[4,5,20],[4,5,40],
@@ -1024,27 +1036,27 @@ test("build cores produce distinct combat events instead of passive score multip
   assert(result.netTaken >= 0);
 });
 
-test("level 140 is a hard cap and offline settlement preserves the selected difficulty band", () => {
+test("level 150 is a hard cap and offline settlement preserves the selected difficulty band", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
-    alpha041EnsureState();state.level=139;state.xp=xpNeed(139)-1;gainXp(999999999);
+    alpha041EnsureState();state.level=149;state.xp=xpNeed(149)-1;gainXp(999999999);
     const cap={level:state.level,xp:state.xp};state.level=35;state.worldDifficulty='normal';
     const before=[...map().levels],snap=alpha041BeginOfflineProtection(),during=[...map().levels];
     alpha041EndOfflineProtection(snap);const after=[...map().levels];
     return JSON.stringify({cap,before,during,after,selected:state.worldDifficulty});
   })()`));
-  assert.deepStrictEqual(result.cap, { level: 140, xp: 0 });
+  assert.deepStrictEqual(result.cap, { level: 150, xp: 0 });
   assert.deepStrictEqual(result.before, [1, 10]);
   assert.deepStrictEqual(result.during, [1, 10]);
   assert.deepStrictEqual(result.after, [1, 10]);
   assert.strictEqual(result.selected, "normal");
 });
 
-test("0.42 uses smooth defense, seven equipment bands and real map slot focus", () => {
+test("0.45.4 uses smooth defense, eight equipment bands and real map slot focus", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
-    state.started=true;state.worldDifficulty='torment10';state.highestUnlockedDifficulty=13;state.mapId='meadow';alpha041EnsureState();
-    let weapon=0;for(let i=0;i<300;i++){const it=makeItem(1,null,2,true);if(it.slot==='weapon')weapon++;if(it.tier!==7)throw new Error('wrong tier')}
+    state.started=true;state.worldDifficulty='torment10';state.highestUnlockedDifficulty=14;state.mapId='meadow';alpha041EnsureState();
+    let weapon=0;for(let i=0;i<300;i++){const it=makeItem(1,null,2,true);if(it.slot==='weapon')weapon++;if(it.tier!==8)throw new Error('wrong tier')}
     return JSON.stringify({zero:smoothDamageAfterDefense(100,0),mid:smoothDamageAfterDefense(100,180),high:smoothDamageAfterDefense(100,1800),weapon});
   })()`));
   assert.deepStrictEqual({zero:result.zero,mid:result.mid,high:result.high},{zero:100,mid:50,high:9});
@@ -1067,7 +1079,7 @@ test("0.42 retires legacy rebirth tabs and records build damage by source", () =
 test("world difficulty owns ten-level enemy bands from normal through torment X", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
-    alpha041EnsureState();state.highestUnlockedDifficulty=13;
+    alpha041EnsureState();state.highestUnlockedDifficulty=14;
     const rows=[];
     for(const d of ALPHA_041_DIFFICULTIES){
       setWorldDifficulty(d.id);
@@ -1077,15 +1089,17 @@ test("world difficulty owns ten-level enemy bands from normal through torment X"
     }
     return JSON.stringify(rows);
   })()`));
-  assert.strictEqual(result.length, 14);
+  assert.strictEqual(result.length, 15);
   result.forEach((row, index) => {
     assert(row.min >= index * 10 + 1, `${row.id} spawned below its level band`);
     assert(row.max <= (index + 1) * 10, `${row.id} spawned above its level band`);
     assert.deepStrictEqual(row.mapLevels, [index * 10 + 1, (index + 1) * 10]);
   });
   assert.deepStrictEqual(result[0].mapLevels, [1, 10]);
-  assert.deepStrictEqual(result[4].mapLevels, [41, 50]);
-  assert.deepStrictEqual(result[13].mapLevels, [131, 140]);
+  assert.deepStrictEqual(result[2].mapLevels, [21, 30]);
+  assert.strictEqual(result[2].id, "adept");
+  assert.deepStrictEqual(result[5].mapLevels, [51, 60]);
+  assert.deepStrictEqual(result[14].mapLevels, [141, 150]);
 });
 
 test("boss progress is isolated by map and world difficulty", () => {
@@ -1130,7 +1144,7 @@ test("0.45.3 exposes x10/x20 test speeds without changing offline settlement", (
     return JSON.stringify({version:VERSION,speed20:controls.includes('aria-pressed="true" title="测试速度 · 每回合约33毫秒">×20'),fallback:state.battleSpeed,intervals,offline:alpha043OfflineBattleCount(24*60*60*1000),buttons:[1,2,4,10,20].every(x=>controls.includes('×'+x))});
   })()`));
   assert.deepStrictEqual(result, {
-    version: "0.45.3",
+    version: "0.45.4",
     speed20: true,
     fallback: 1,
     intervals: [65, 33],
@@ -1224,7 +1238,7 @@ test("compressed offline campaign remains finite across 1000 resolved battles", 
     finite: true,
     nonnegative: true,
     battles: 1000,
-    version: "0.45.3",
+    version: "0.45.4",
   });
 });
 
@@ -1247,14 +1261,15 @@ test("0.43 skills use deterministic priority without proficiency growth", () => 
   assert.deepStrictEqual(result, { picked: "farmer_swing", before: 0, after: 0, noMastery: true, priority: true });
 });
 
-test("0.44 weapon refinement reaches cumulative +275% at +10", () => {
+test("0.45.4 refinement progress is shown consistently while preserving slot caps", () => {
   const context = createContext();
   const result = JSON.parse(evaluate(context, `(()=>{
-    const weapon=makeItem(1,'sword',2,false),armor=makeItem(1,null,2,false);
-    weapon.slot='weapon';weapon.refine=10;armor.slot='armor';armor.refine=5;
-    return JSON.stringify({weaponMax:refineMaxLevel(weapon),weaponPct:refineBonusPct(weapon),weaponMult:refineMultiplier(weapon),armorMax:refineMaxLevel(armor),armorPct:refineBonusPct(armor),ui:renderInventory().includes('满级累计提升275%')});
+    const weapon=makeItem(1,'sword',2,false),armor=makeItem(1,null,2,false),ring=makeItem(1,null,2,false);
+    weapon.slot='weapon';weapon.refine=10;armor.slot='armor';armor.refine=5;ring.slot='ring';ring.refine=0;
+    state.equipment.weapon=weapon;state.equipment.armor=armor;state.inventory=[ring];const ui=renderInventory();
+    return JSON.stringify({weaponMax:refineMaxLevel(weapon),weaponPct:refineBonusPct(weapon),weaponMult:refineMultiplier(weapon),armorMax:refineMaxLevel(armor),armorPct:refineBonusPct(armor),guide:ui.includes('满级累计提升275%'),progress:ui.includes('精炼 +10/10')&&ui.includes('精炼 +5/5')&&ui.includes('精炼 +0/5')});
   })()`));
-  assert.deepStrictEqual(result, { weaponMax: 10, weaponPct: 275, weaponMult: 3.75, armorMax: 5, armorPct: 40, ui: true });
+  assert.deepStrictEqual(result, { weaponMax: 10, weaponPct: 275, weaponMult: 3.75, armorMax: 5, armorPct: 40, guide: true, progress: true });
 });
 
 test("0.44 enemy ecologies are visible and have bounded counterplay", () => {
@@ -1338,8 +1353,8 @@ test("long deterministic battle run keeps core state finite", () => {
     finite: true,
     nonnegative: true,
     started: true,
-    version: "0.45.3",
+    version: "0.45.4",
   });
 });
 
-console.log("\nAlpha 0.45.3.1 regression suite passed.");
+console.log("\nAlpha 0.45.4 regression suite passed.");

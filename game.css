@@ -127,14 +127,59 @@ h1 {
   min-height: 18px;
   margin-top: 6px;
 }
+.battle-enemy-card {
+  height: 206px;
+  min-height: 206px;
+  max-height: 206px;
+  overflow: hidden;
+}
+.battle-enemy-card .name-row {
+  height: 22px;
+  min-height: 22px;
+  max-height: 22px;
+  overflow: hidden;
+}
+.battle-enemy-card .big-name,
+.battle-enemy-card .badge {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.battle-enemy-card .big-name {
+  flex: 1 1 auto;
+}
+.battle-enemy-card .badge {
+  flex: 0 0 135px;
+  max-width: 135px;
+  font-size: 9px;
+}
 .battle-enemy-mechanics {
-  min-height: 82px;
+  height: 118px;
+  min-height: 118px;
+  max-height: 118px;
+  overflow: hidden;
+}
+.battle-enemy-mechanics .ecology-status-044 {
+  height: 47px;
+  min-height: 47px;
+  max-height: 47px;
   overflow: hidden;
 }
 .battle-enemy-special,
 .battle-enemy-status {
   min-height: 18px;
   margin-top: 6px;
+}
+.battle-enemy-special {
+  height: 35px;
+  max-height: 35px;
+  overflow: hidden;
+}
+.battle-enemy-status {
+  height: 18px;
+  max-height: 18px;
+  overflow: hidden;
 }
 .combatant {
   border: 1px solid #554830;
@@ -858,9 +903,12 @@ details.mini .help-body {
   .battle-enemy-mechanics {
     height: 72px;
     min-height: 72px;
+    max-height: 72px;
   }
   .battle-enemy-mechanics .ecology-status-044 {
     height: 36px;
+    min-height: 36px;
+    max-height: 36px;
     margin-top: 4px;
     padding: 4px 5px;
     overflow: hidden;
@@ -869,6 +917,7 @@ details.mini .help-body {
   .battle-enemy-status {
     height: 14px;
     min-height: 14px;
+    max-height: 14px;
     margin-top: 2px;
     overflow: hidden;
     text-overflow: ellipsis;

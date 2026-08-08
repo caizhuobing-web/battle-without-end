@@ -6,6 +6,7 @@
   const DIFFICULTIES = [
     ["normal", "普通", 1, 1, 1],
     ["hard", "困难", 1, 1, 1.15],
+    ["adept", "高手", 1, 1, 1.25],
     ["expert", "专家", 1, 1, 1.35],
     ["master", "大师", 1, 1, 1.6],
     ["torment1", "折磨 I", 1.35, 1.12, 1.9],
@@ -21,7 +22,8 @@
   ].map(([id, name, hp, atk, reward], index) => ({
     id, name, hp, atk, def: Math.sqrt(hp), reward, index,
     minLevel: index * 10 + 1, maxLevel: (index + 1) * 10,
-    torment: index >= 4,
+    torment: id.startsWith("torment"),
+    tormentIndex: id.startsWith("torment") ? Number(id.replace("torment", "")) : 0,
   }));
   const DIFFICULTY_BY_ID = Object.fromEntries(DIFFICULTIES.map((d) => [d.id, d]));
   const PERMANENT_MAP_IDS = ["meadow", "hill", "forest", "shore", "ruins"];
@@ -41,7 +43,7 @@
     burn: "灼烧引爆", cooldown: "技能回响", pet: "宠物共战",
   };
 
-  const LEVEL_CAP_041 = 140;
+  const LEVEL_CAP_041 = 150;
   const THREAT_CAP_042 = 9;
   const BUILDS_041 = {
     crit: { name: "暴击连斩流", icon: "⚔️" },
@@ -102,10 +104,14 @@
     return DIFFICULTY_BY_ID[state.worldDifficulty] || DIFFICULTIES[0];
   }
   function petDropTierProfile041(d = difficulty()) {
-    const index = clamp(Number(d?.index || 0), 0, DIFFICULTIES.length - 1),
-      guaranteed = Math.min(5, 1 + Math.floor(index / 3)),
-      promoted = Math.min(6, guaranteed + 1),
-      promotionChance = (index % 3) * 0.2;
+    const preservedProfiles = {
+        normal: [1, 2, 0], hard: [1, 2, 0.2], adept: [1, 2, 0.3], expert: [1, 2, 0.4],
+        master: [2, 3, 0], torment1: [2, 3, 0.2], torment2: [2, 3, 0.4],
+        torment3: [3, 4, 0], torment4: [3, 4, 0.2], torment5: [3, 4, 0.4],
+        torment6: [4, 5, 0], torment7: [4, 5, 0.2], torment8: [4, 5, 0.4],
+        torment9: [5, 6, 0], torment10: [5, 6, 0.2],
+      },
+      [guaranteed, promoted, promotionChance] = preservedProfiles[d?.id] || preservedProfiles.normal;
     return {
       guaranteed,
       promoted,
@@ -154,7 +160,13 @@
   function ensureAlpha041State() {
     state.version = VERSION;
     state.worldDifficulty = DIFFICULTY_BY_ID[state.worldDifficulty] ? state.worldDifficulty : "normal";
-    state.highestUnlockedDifficulty = clamp(Number(state.highestUnlockedDifficulty || 0), 0, DIFFICULTIES.length - 1);
+    let highest = Number(state.highestUnlockedDifficulty || 0);
+    // Alpha 0.45.4 inserts 高手 at index 2. Shift old numeric unlock progress once;
+    // difficulty IDs and per-difficulty Boss/stat records remain stable.
+    if (Number(state.difficultyRosterVersion || 1) < 2 && highest >= 2) highest++;
+    highest = Math.max(highest, DIFFICULTY_BY_ID[state.worldDifficulty].index);
+    state.highestUnlockedDifficulty = clamp(highest, 0, DIFFICULTIES.length - 1);
+    state.difficultyRosterVersion = 2;
     state.difficultyStats = state.difficultyStats || {};
     state.buildDamage042 = state.buildDamage042 || {};
     state.bossState = state.bossState || {};
@@ -218,9 +230,9 @@
     };
   };
   dangerDropProfile = function () {
-    const d = difficulty(), t = Math.max(0, d.index - 3);
+    const d = difficulty(), t = d.tormentIndex;
     return {
-      progress: d.index / (DIFFICULTIES.length - 1), maxed: d.index === 13,
+      progress: d.index / (DIFFICULTIES.length - 1), maxed: d.index === DIFFICULTIES.length - 1,
       gearDrop: d.reward, petDrop: 1 + t * 0.08,
       mythic: d.torment ? 1 + t * 0.18 : 0,
       mutation: d.torment ? 1 + t * 0.12 : 0,
@@ -426,7 +438,7 @@
   window.challengeDifficultyBoss = function () {
     alert("区域Boss必须通过击败普通怪累计狩猎进度后遭遇，不能手动重复挑战。");
   };
-  rebirth = function () { alert("转生已在Alpha 0.42.1永久移除；Lv.140后请继续优化装备、神话与宠物构筑。"); };
+  rebirth = function () { alert("转生已在Alpha 0.42.1永久移除；Lv.150后请继续优化装备、神话与宠物构筑。"); };
 
   const STARTER_PETS_041 = [
     ["灰尾幼狼", "进攻", "爆发、追击与处决"],

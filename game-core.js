@@ -92,7 +92,7 @@ const PET_TIER_INSTINCTS = {
 
 /* ===== core-01.js ===== */
 ("use strict");
-const VERSION = "0.45.3";
+const VERSION = "0.45.4";
 const SAVE_KEY = "bwe-core-alpha-041";
 const SAFE_BACKUP_KEY = "bwe-core-safe-backup-v1";
 const ALPHA040_SAVE_KEY = "bwe-core-alpha-040";
@@ -1951,7 +1951,7 @@ const PROGRESSION_GOALS = [
     id: "difficulty_expert",
     name: "世界进阶",
     desc: "解锁专家难度",
-    done: (s) => Number(s.highestUnlockedDifficulty || 0) >= 2,
+    done: (s) => Number(s.highestUnlockedDifficulty || 0) >= 3,
     reward: { gold: 1800, rarity: 3 },
   },
   {
@@ -1977,10 +1977,10 @@ const PROGRESSION_GOALS = [
     reward: { gold: 6000, rarity: 4 },
   },
   {
-    id: "level_140",
+    id: "level_150",
     name: "抵达终点",
-    desc: "角色达到等级上限Lv.140",
-    done: (s) => Number(s.level || 1) >= 140,
+    desc: "角色达到等级上限Lv.150",
+    done: (s) => Number(s.level || 1) >= 150,
     reward: { gold: 15000, rarity: 5 },
   },
 ];
@@ -2965,6 +2965,7 @@ function fresh() {
     mapId: "meadow",
     worldDifficulty: "normal",
     highestUnlockedDifficulty: 0,
+    difficultyRosterVersion: 2,
     difficultyStats: {},
     bossState: {},
     enemy: null,
@@ -6639,7 +6640,7 @@ resetGame = function () {
 /* ===== core-13.js ===== */
 function renderStart() {
   const app = document.getElementById("app");
-  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.45.3.1</h1><p class="subtitle">五分钟做构筑 · 全天自动刷宝</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
+  app.innerHTML = `<div class="start"><h1>无尽战域：Alpha 0.45.4</h1><p class="subtitle">五分钟做构筑 · 全天自动刷宝</p><label>角色名称 <input id="hero-name" value="旅者" style="margin-left:8px;background:#12100c;color:#fff;border:1px solid #51442f;padding:7px"></label><h2>选择普通种族</h2><div class="choice-grid">${STARTER_RACES.map(
     (id) => {
       const r = RACES[id];
       return `<div class="choice race" data-id="${id}" onclick="selectStart('race','${id}')"><h3>${r.icon}${r.name} · ${identityRarityLabel(r)}</h3><div class="compact-meta">${r.traitName}：${r.traitDesc}</div>${miniDetail("属性倍率", identityGrowthText(r))}</div>`;
@@ -6793,7 +6794,7 @@ function render(preserveUi = true) {
     e = state.enemy,
     p = activePet();
   document.getElementById("app").innerHTML =
-    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.45.3.1</h1><div class="subtitle">五分钟做构筑 · 全天自动刷宝</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
+    `<div class="shell"><div class="topbar"><div><h1>无尽战域：Alpha 0.45.4</h1><div class="subtitle">五分钟做构筑 · 全天自动刷宝</div></div><div class="resources"><span>等级 <b id="live-level">${state.level}</b></span><span class="xp-chip">经验 <b id="live-xp">${state.xp}/${xpNeed()}</b><span class="xp-mini"><i id="live-xp-fill" style="width:${clamp((state.xp / Math.max(1, xpNeed())) * 100, 0, 100)}%"></i></span></span><span>CP <b id="live-cp">${cp()}</b></span><span>金币 <b id="live-gold">${state.gold}</b></span></div></div><div class="log-dock" id="log-dock">${renderLogControls()}<div class="log-stream">${filteredLogs()
       .map(
         (x) =>
           `<div class="${x.cls} cat-${x.category || inferLogCategory(x.msg, x.cls)}">${x.msg}</div>`,
@@ -6814,7 +6815,7 @@ function render(preserveUi = true) {
       )
       .join(
         "",
-      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.45.3.1：战败诊断启动热修。</div></div>`;
+      )}<button class="tab" onclick="save();alert('已立即保存。')">快速保存</button><button class="tab" onclick="resetGame()">重开</button></div><div id="main-dirty" class="main-dirty ${mainContentDirty ? "show" : ""}"><span>战斗产生了新数据；当前页面保持不动。</span><button onclick="refreshMainContent(true)">刷新当前页</button></div><div class="content" id="main-content">${renderTab()}</div></div></div>${mobileMenuOpen ? `<div class="mobile-backdrop" onclick="toggleMobileMenu()"></div><div class="mobile-sheet"><h3>更多功能</h3><div class="mobile-sheet-grid"><button onclick="mobileNavigate('skills')">⚔️ 技能</button><button onclick="mobileNavigate('saves')">💾 存档</button><button onclick="mobileQuickSave()">✅ 快速保存</button><button class="danger" onclick="resetGame()">⚠️ 重开游戏</button><button onclick="toggleMobileMenu()">关闭</button></div></div>` : ""}<div class="mobile-nav"><button onclick="mobileNavigate()"><b>⚔️</b>战斗</button><button onclick="mobileNavigate('character')" class="${state.tab === "character" ? "active" : ""}"><b>👤</b>角色</button><button onclick="mobileNavigate('inventory')" class="${state.tab === "inventory" ? "active" : ""}"><b>🎒</b>装备</button><button onclick="mobileNavigate('pets')" class="${state.tab === "pets" ? "active" : ""}"><b>🐾</b>宠物</button><button onclick="mobileNavigate('maps')" class="${state.tab === "maps" ? "active" : ""}"><b>🗺️</b>地图</button><button onclick="toggleMobileMenu()" class="${mobileMenuOpen || ["skills", "saves"].includes(state.tab) ? "active" : ""}"><b>☰</b>更多</button></div><div class="footer">Alpha 0.45.4：统一精炼显示 · 新增高手难度 · 等级上限150。</div></div>`;
   mainContentDirty = false;
   updateResourceBar();
   renderBattleOnly();
@@ -7035,7 +7036,7 @@ function renderInventory() {
     (slot) => {
       const it = state.equipment[slot],
         fit = it ? gearFitLabel(it) : null;
-      return `<div class="item ${itemVisualClass(it)}"><div><b class="equip-slot-label">${SLOT_NAMES[slot]}</b>：${it ? `<span class="${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}` : "空"}</div>${it ? `<div class="controls"><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= refineMaxLevel(it) ? "disabled" : ""}>精炼${it.slot === "weapon" ? ` +${it.refine || 0}/10` : ""}</button><button onclick="unequip('${slot}')">卸下</button></div>` : ""}</div>`;
+      return `<div class="item ${itemVisualClass(it)}"><div><b class="equip-slot-label">${SLOT_NAMES[slot]}</b>：${it ? `<span class="${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}` : "空"}</div>${it ? `<div class="controls"><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= refineMaxLevel(it) ? "disabled" : ""}>精炼 +${it.refine || 0}/${refineMaxLevel(it)}</button><button onclick="unequip('${slot}')">卸下</button></div>` : ""}</div>`;
     },
   ).join("")}</div><div class="card" style="margin-top:10px"><h3>背包</h3>${
     ordered
@@ -7044,7 +7045,7 @@ function renderInventory() {
           delta = inventoryUpgradeDelta(it),
           positive = delta > 0,
           fit = gearFitLabel(it);
-        return `<div class="item ${itemVisualClass(it)}"><div><span class="item-name ${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · ${SLOT_NAMES[it.slot]} · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div><div class="compare ${positive ? "risk-safe" : "muted"}">${positive ? `提升 +${delta}` : `无提升 ${delta}`}${old ? `｜当前${itemScore(old)}` : ""}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}</div><div class="controls"><button onclick="equipItem('${it.id}')">装备</button><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= refineMaxLevel(it) ? "disabled" : ""}>精炼${it.slot === "weapon" ? ` +${it.refine || 0}/10` : ""}</button><button onclick="state.inventory.find(x=>x.id==='${it.id}').locked=!state.inventory.find(x=>x.id==='${it.id}').locked;render()">${it.locked ? "解锁" : "锁定"}</button><button ${it.locked ? "disabled" : ""} onclick="sellItem('${it.id}')">出售${itemSellValue(it)}</button></div></div>`;
+        return `<div class="item ${itemVisualClass(it)}"><div><span class="item-name ${RARITIES[it.rarity].cls}">${inferItemTier(it)}阶 ${it.name}</span> · ${SLOT_NAMES[it.slot]} · <b>${itemScore(it)}</b> <span class="${fit[1]}">${fit[0]}</span><div class="compact-meta">${compactItemText(it)}</div><div class="compare ${positive ? "risk-safe" : "muted"}">${positive ? `提升 +${delta}` : `无提升 ${delta}`}${old ? `｜当前${itemScore(old)}` : ""}</div>${miniDetail("详细属性 / 评分", `${itemText(it)}<br>${gearScoreDetail(it)}`)}</div><div class="controls"><button onclick="equipItem('${it.id}')">装备</button><button onclick="refineItem('${it.id}')" ${(it.refine || 0) >= refineMaxLevel(it) ? "disabled" : ""}>精炼 +${it.refine || 0}/${refineMaxLevel(it)}</button><button onclick="state.inventory.find(x=>x.id==='${it.id}').locked=!state.inventory.find(x=>x.id==='${it.id}').locked;render()">${it.locked ? "解锁" : "锁定"}</button><button ${it.locked ? "disabled" : ""} onclick="sellItem('${it.id}')">出售${itemSellValue(it)}</button></div></div>`;
       })
       .join("") || '<div class="muted">尚无装备。</div>'
   }</div>`;
