@@ -135,7 +135,8 @@ assert.strictEqual(S.offlineGain([{ dna: "x", wall: null }, null], 3600), 0, "�
   // 死在井里只带回 25% 的 DNA，样本全丢
   const dead = play(31, [], HALF, 0);
   assert.strictEqual(dead.over, "dead");
-  assert.strictEqual(S.dnaOf(dead), Math.floor(dead.loot * 0.25));
+  assert.strictEqual(S.dnaOf(dead), Math.max(Math.floor(dead.loot * 0.25), Math.min(Math.floor(dead.loot), 4)));
+  assert(S.dnaOf({ over: "dead", loot: 9, st: { keep: 0 } }) === 4 && S.dnaOf({ over: "dead", loot: 3.5, st: { keep: 0 } }) === 3, "死亡保底 4 点 DNA");
   assert.strictEqual(S.samplePoints(dead), 0);
   // 第 1 层就上浮：一定能活着回来，并带回全部
   let outs = 0, deeper = 0;

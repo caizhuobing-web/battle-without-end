@@ -183,7 +183,7 @@
       "end",
       `<div class="dlg">
         <h2 class="${out ? "evo" : ""}">${out ? "回到井口" : "留在了井里"}</h2>
-        <p>${out ? `种子从第 ${run.exitLayer} 层上浮，带回了全部物资` : `种子死于第 ${layer} 层，只带回 ${Math.round(Math.min(1, 0.25 + run.st.keep / 100) * 100)}% 的 DNA${lost ? "，样本全部遗失" : ""}`}</p>
+        <p>${out ? `种子从第 ${run.exitLayer} 层上浮，带回了全部物资` : `种子死于第 ${layer} 层，只带回 ${dna} DNA${lost ? "，样本全部遗失" : ""}`}</p>
         <div class="dna-gain">${dnaImg()}+${fmt(dna)}${sp ? ` ${spImg()}+${sp}` : ""}</div>
         ${out && sp ? `<p>样本：${sampleText(run.samples)}</p>` : ""}
         <div class="sum">
@@ -242,7 +242,7 @@
         const t = S.ascentTime(L), per = S.ascentStrain(run, L) * 100;
         return { cls: "fm", pic: img("up", R.PAL.amber), ttl: "上浮", sub: `带回全部物资，当前生命 ${Math.round((run.hp / run.maxHp) * 100)}%`, dsc: `上浮需要 ${t} 秒。减压每秒夺走 ${per.toFixed(1)}% 的生命上限，合计约 ${Math.round(per * t)}%。途中敌人仍会出现，回复与吸血只有 20% 的效果。` };
       }
-      return { cls: "r2", pic: img("down", R.PAL.volt), ttl: "继续下潜", sub: `前往第 ${L + 1} 层，${zoneOf(L + 1).n}`, dsc: `敌人更强，每波 DNA 更多，领主掉落${gradeOf(L + 1).n}样本。死在井里只带回 ${Math.round(Math.min(1, 0.25 + run.st.keep / 100) * 100)}% 的 DNA，样本全丢。` };
+      return { cls: "r2", pic: img("down", R.PAL.volt), ttl: "继续下潜", sub: `前往第 ${L + 1} 层，${zoneOf(L + 1).n}`, dsc: `敌人更强，每波 DNA 更多，领主掉落${gradeOf(L + 1).n}样本。死在井里只带回 ${Math.round(Math.min(1, 0.25 + run.st.keep / 100) * 100)}% 的 DNA（至少 4），样本全丢。` };
     }
     if (o.k === "skill") {
       const sk = D.SKILLS[o.id], own = run.skills.find((s) => s.id === o.id), pic = img(o.id, D.TAGS[sk.tag].c);
@@ -362,7 +362,7 @@
     const dmg = Object.keys(run.dmgBy).filter((t) => run.dmgBy[t] > 0).sort((a, b) => run.dmgBy[b] - run.dmgBy[a])
       .map((t) => `<div><span style="color:${D.TAGS[t].c}">${D.TAGS[t].n}</span><div class="bar"><i style="width:${(run.dmgBy[t] / tot) * 100}%;background:${D.TAGS[t].c}"></i></div><em>${Math.round((run.dmgBy[t] / tot) * 100)}%</em></div>`).join("");
     const muts = Object.keys(run.muts).map((id) => `<span class="tag r${D.MUTS[id].rar}" data-tip="${esc(D.MUTS[id].n + "，" + D.MUTS[id].d)}">${D.MUTS[id].n}${run.muts[id] > 1 ? " x" + run.muts[id] : ""}</span>`).join("");
-    return `<h3>携带物资</h3><p>DNA ${fmt(run.loot)}，样本：${sampleText(run.samples)}</p><p class="muted">肃清一层后可以上浮带走全部。死在井里只带回 ${Math.round(Math.min(1, 0.25 + s.keep / 100) * 100)}% 的 DNA，样本全丢。</p>
+    return `<h3>携带物资</h3><p>DNA ${fmt(run.loot)}，样本：${sampleText(run.samples)}</p><p class="muted">肃清一层后可以上浮带走全部。死在井里只带回 ${Math.round(Math.min(1, 0.25 + s.keep / 100) * 100)}% 的 DNA（至少 4），样本全丢。</p>
       <h3>进化路线</h3><p>${esc(path)}</p><p class="muted">${nextEvoHint()}</p>
       <h3>属性</h3><div class="stats">${stats.map(([k, v]) => `<div class="stat"><span>${k}</span><b>${v}</b></div>`).join("")}</div>
       <h3>伤害来源</h3><div class="dmg">${dmg || '<span class="muted">还没有造成伤害</span>'}</div>

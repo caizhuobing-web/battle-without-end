@@ -796,7 +796,9 @@
 
   /* 带回营地的东西：上浮成功全带回；死在井里只带回一部分 DNA，样本全丢。 */
   function dnaOf(run) {
-    return Math.floor(run.loot * (run.over === "out" ? 1 : Math.min(1, 0.25 + run.st.keep / 100)));
+    if (run.over === "out") return Math.floor(run.loot);
+    /* 保底：最先到手的 4 点 DNA 不会丢，避免新手第一局什么都买不起 */
+    return Math.max(Math.floor(run.loot * Math.min(1, 0.25 + run.st.keep / 100)), Math.min(Math.floor(run.loot), 4));
   }
   function samplePoints(run) {
     return run.over === "out" ? run.samples.reduce((a, n, i) => a + n * D.SAMPLES[i].v, 0) : 0;
