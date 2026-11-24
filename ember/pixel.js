@@ -335,22 +335,52 @@
     return { r, dith };
   }
 
-  /* 洞穴背景：远壁、顶、地面、旧补给线的桩和绳，再加每层自己的东西。repaired 为真时桩上亮灯。 */
+  /* 远景：Foozle 的地下视差背景（CC0，见 CREDITS.md），灰度图按每层的三色重新上色。图没加载好时用程序画的剪影。 */
+  let farImg = null;
+  if (G.EmberAssets && typeof Image !== "undefined") {
+    const im = new Image();
+    im.onload = () => {
+      farImg = im;
+      for (const k in cache) if (k.startsWith("bg")) delete cache[k];
+    };
+    im.src = G.EmberAssets.caveFar;
+  }
+  const FARW = 256;
+  function farBG(layer) {
+    return get("far" + layer, () => {
+      const cv = mk(FARW, H), c = cv.getContext("2d");
+      c.drawImage(farImg, 0, 0);
+      const img = c.getImageData(0, 0, FARW, H), px = img.data;
+      const lv = [...new Set(Array.from({ length: px.length / 4 }, (_, i) => px[i * 4]))].sort((a, b) => a - b);
+      const [d, m, l] = BANDS[layer];
+      const ramp = [mixh(d, PAL.coal, 0.55), mixh(d, PAL.coal, 0.3), d, mixh(d, m, 0.2), mixh(d, m, 0.4), mixh(d, m, 0.75), mixh(m, l, 0.35)].map(rgb);
+      for (let i = 0; i < px.length; i += 4) {
+        const k = ramp[Math.min(ramp.length - 1, Math.round((lv.indexOf(px[i]) / Math.max(1, lv.length - 1)) * (ramp.length - 1)))];
+        px[i] = k[0];
+        px[i + 1] = k[1];
+        px[i + 2] = k[2];
+      }
+      c.putImageData(img, 0, 0);
+      return cv;
+    });
+  }
+
+  /* 洞穴近景：顶、地面、旧补给线的桩和绳，再加每层自己的东西。repaired 为真时桩上亮灯。 */
   function caveBG(layer, repaired) {
-    return get("bg" + layer + (repaired ? 1 : 0), () => {
+    return get("bg" + layer + (repaired ? 1 : 0) + (farImg ? "f" : ""), () => {
       const cv = mk(W, H), c = cv.getContext("2d"), { r, dith } = pen(c);
       const [d, m, l] = BANDS[layer];
       const far = mixh(d, m, 0.45), deep = mixh(d, PAL.coal, 0.5), lo = mixh(m, l, 0.4);
-      r(0, 0, W, H, d);
-      // 远处的石笋与石柱剪影
-      for (let i = 0; i < 9; i++) {
+      if (!farImg) r(0, 0, W, H, d);
+      // 没有远景图时：程序画的石笋剪影
+      for (let i = 0; i < (farImg ? 0 : 9); i++) {
         const x = Math.floor(hash(i * 71 + layer * 13) * W), bw = 8 + Math.floor(hash(i * 29 + layer) * 14), bh = 14 + Math.floor(hash(i * 43 + layer * 7) * 30);
         for (let k = 0; k < bh; k++) {
           const ww = Math.max(2, Math.round(bw * (0.35 + 0.65 * (k / bh))));
           r(x - ww / 2, FLOOR - bh + k, ww, 1, far);
         }
       }
-      dith(0, FLOOR - 8, W, 8, far, 0);
+      if (!farImg) dith(0, FLOOR - 8, W, 8, far, 0);
       // 顶：起伏的岩层，下沿一条亮线
       for (let x = 0; x < W; x += 3) {
         const h = 7 + Math.floor((hash(Math.floor(x / 3) * 7 + layer * 101) + hash(Math.floor(x / 9) * 3 + layer)) * 6);
@@ -643,6 +673,11 @@
     } else {
       const bg = caveBG(layer, s.route >= layer);
       const off = Math.floor(view.scroll || 0) % W;
+      if (farImg) {
+        const fo = Math.floor((view.scroll || 0) * 0.4) % FARW, fb = farBG(layer);
+        c.drawImage(fb, -fo, 0);
+        if (fo > FARW - W) c.drawImage(fb, FARW - fo, 0);
+      }
       c.drawImage(bg, -off, 0);
       if (off) c.drawImage(bg, W - off, 0);
       c.drawImage(vignette(), 0, 0);
