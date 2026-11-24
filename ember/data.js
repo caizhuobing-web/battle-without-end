@@ -39,20 +39,20 @@
   /* 配件：打怪掉落，带回聚落才算数，最多装 3 件。k 词条键，v 普通品质在第一层的数值，fit 最配的行装。
      词条键：atk hp arm 加法；o2 氧气上限；cap 负重上限；其余是百分比或点数，含义见 STATS。 */
   const ITEMS = {
-    blade: { name: "猎刃", k: "atk", v: 2 },
-    plate: { name: "骨甲片", k: "arm", v: 1 },
-    felt: { name: "裹毡", k: "hp", v: 14 },
+    blade: { name: "猎刃", k: "atk", v: 3 },
+    plate: { name: "骨甲片", k: "arm", v: 2 },
+    felt: { name: "裹毡", k: "hp", v: 22 },
     filter: { name: "滤芯", k: "o2", v: 2 },
     strap: { name: "背带", k: "cap", v: 3 },
-    awl: { name: "破甲锥", k: "breach", v: 15, fit: "hunter" },
-    nail: { name: "穿骨钉", k: "big", v: 12, fit: "hunter" },
-    nozzle: { name: "散射嘴", k: "swarm", v: 15, fit: "stoker" },
+    awl: { name: "破甲锥", k: "breach", v: 25, fit: "hunter" },
+    nail: { name: "穿骨钉", k: "big", v: 20, fit: "hunter" },
+    nozzle: { name: "散射嘴", k: "swarm", v: 25, fit: "stoker" },
     valve: { name: "节核阀", k: "fuel", v: 25, fit: "stoker" },
-    barb: { name: "回击刺", k: "counter", v: 40, fit: "guard" },
+    barb: { name: "回击刺", k: "counter", v: 60, fit: "guard" },
     lung: { name: "缓息囊", k: "stam", v: 3, fit: "guard" },
     hook: { name: "猎核钩", k: "loot", v: 15 },
-    salve: { name: "止血膏", k: "regen", v: 5 },
-    sight: { name: "准星", k: "crit", v: 8 },
+    salve: { name: "止血膏", k: "regen", v: 7 },
+    sight: { name: "准星", k: "crit", v: 12 },
   };
   const STATS = {
     atk: ["攻击", "+", ""], hp: ["生命", "+", ""], arm: ["护甲", "+", ""], o2: ["氧气上限", "+", ""], cap: ["负重上限", "+", ""],
@@ -68,12 +68,12 @@
 
   /* 技艺：首领首次击倒必掉一个，深层的普通敌人偶尔掉。最多带 2 个。 */
   const SKILLS = {
-    spear: { name: "投矛", desc: "每 3 轮，对最强的敌人追加一击，伤害为攻击的 200%" },
-    quake: { name: "震地", desc: "每 4 轮，对全部敌人造成攻击 80% 的伤害" },
-    smoke: { name: "烟幕", desc: "每场战斗前 2 轮，受到的伤害 -50%" },
-    aid: { name: "急救", desc: "每场战斗一次，生命低于 40% 时回复 25%" },
-    brand: { name: "引燃", desc: "每轮，全部敌人受到攻击 25% 的灼烧" },
-    still: { name: "屏息", desc: "每打赢一场，氧气 +1" },
+    spear: { name: "投矛", desc: "每 2 轮，对最强的敌人追加一击，伤害为攻击的 150%" },
+    quake: { name: "震地", desc: "每 3 轮，对全部敌人造成攻击 120% 的伤害" },
+    smoke: { name: "烟幕", desc: "每场战斗前 3 轮，受到的伤害 -50%" },
+    aid: { name: "急救", desc: "每场战斗一次，生命低于 40% 时回复 35%" },
+    brand: { name: "引燃", desc: "每轮，全部敌人受到攻击 40% 的灼烧" },
+    still: { name: "屏息", desc: "每打赢一场，氧气 +2" },
   };
   const SKILL_SLOTS = 2;
   const BOSS_SKILL = { 1: "spear", 2: "smoke", 3: "quake" };

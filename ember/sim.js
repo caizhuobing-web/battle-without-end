@@ -370,7 +370,7 @@
   function hurt(s, raw, foe) {
     const d = s.dive, enc = d.enc, h = d.team[0], ad = s.outfits[s.wear].adv, M = enc.m;
     let mul = 1;
-    if (enc.smoke && enc.round <= 2) mul *= 0.5;
+    if (enc.smoke && enc.round <= 3) mul *= 0.5;
     if (s.wear === "guard" && ad && enc.stance === "cover" && d.stam > 0) {
       d.stam--;
       mul *= 0.5;
@@ -422,19 +422,19 @@
       }
     }
     // 技艺
-    if (enc.spear && enc.round % 3 === 0 && live().length) {
+    if (enc.spear && enc.round % 2 === 0 && live().length) {
       const t2 = strongest();
-      t2.hp -= h.atk * 2 * mulOf(t2);
+      t2.hp -= h.atk * 1.5 * mulOf(t2);
     }
-    if (enc.quake && enc.round % 4 === 0) for (const f of live()) f.hp -= h.atk * 0.8 * mulOf(f);
-    if (enc.brand) for (const f of live()) f.hp -= h.atk * 0.25;
+    if (enc.quake && enc.round % 3 === 0) for (const f of live()) f.hp -= h.atk * 1.2 * mulOf(f);
+    if (enc.brand) for (const f of live()) f.hp -= h.atk * 0.4;
     // 敌人出手
     for (const f of enc.foes) {
       if (f.hp <= 0 || h.hp <= 0) continue;
       hurt(s, E.trait === "boss" && enc.round % 3 === 0 ? E.atk * 2.5 : E.atk, f);
     }
     if (enc.aid && !enc.aided && h.hp > 0 && h.hp < h.max * 0.4) {
-      h.hp = Math.min(h.max, h.hp + Math.round(h.max * 0.25));
+      h.hp = Math.min(h.max, h.hp + Math.round(h.max * 0.35));
       enc.aided = true;
     }
     if (s.wear === "guard" && ad && enc.stance === "counter") {
@@ -535,7 +535,7 @@
     }
     say(s, "打倒了" + E.name + "。能核 +" + core + got + "。");
     if (enc.m.regen) h.hp = Math.min(h.max, h.hp + enc.m.regen);
-    if (enc.still) d.o2 = Math.min(d.o2Max, d.o2 + 1);
+    if (enc.still) d.o2 = Math.min(d.o2Max, d.o2 + 2);
     d.enc = null;
     advance(s);
     return "won";
