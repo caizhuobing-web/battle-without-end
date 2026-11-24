@@ -2,7 +2,7 @@
 (function (G) {
   const D = G.EvoData;
   const PR = 14; // 玩家半径
-  const STAT_KEYS = "hp hpPct regen armor dodge dmg atkSpd crit critDmg area proj leech thorns shield xp dna dur physInc poisonInc fireInc lightInc coldInc bloodInc broodInc armorInc poisonCap poisonSpread burnExplode overload chain shatter freeze iceShard minions minionPoison minionSplash symb lowHp overheal hpToDmg execute frenzy soul revive thornPoison dblLight killHeal rerolls startLv choices".split(" ");
+  const STAT_KEYS = "hp hpPct regen armor dodge dmg atkSpd crit critDmg area proj leech thorns shield xp dna dur physInc poisonInc fireInc lightInc coldInc bloodInc broodInc armorInc poisonCap poisonSpread burnExplode overload chain shatter freeze iceShard minions minionPoison minionSplash symb lowHp overheal hpToDmg execute frenzy soul revive thornPoison dblLight killHeal rerolls startLv choices startSkill apex".split(" ");
 
   function rnd(run) {
     const a = (run.rs = (run.rs + 0x6d2b79f5) | 0);
@@ -12,9 +12,9 @@
   }
   const lvlMul = (l) => 1 + 0.5 * (l - 1);
   const extra = (l) => (l >= 3 ? 1 : 0) + (l >= 5 ? 1 : 0);
-  const need = (l) => Math.round(3 + 1.6 * l + 0.15 * l * l);
-  const hpMul = (w) => 0.75 + 0.1 * w + 0.02 * w * w;
-  const dmMul = (w) => 0.8 + 0.05 * w + 0.003 * w * w;
+  const need = (l) => (l <= 1 ? 4 : Math.round((3 + 1.6 * l + 0.15 * l * l) * 2.3));
+  const hpMul = (w) => (0.75 + 0.1 * w + 0.024 * w * w) * 0.52;
+  const dmMul = (w) => (0.8 + 0.05 * w + 0.004 * w * w) * 0.56;
 
   function addSt(st, list, n) {
     for (const [k, v] of list) st[k] += v * n;
@@ -34,6 +34,10 @@
     if (th) {
       st.armor += 6 * th.lvl;
       st.thorns += 5 * lvlMul(th.lvl);
+    }
+    if (run.forms.length >= 3 && st.apex) {
+      st.dmg += st.apex;
+      st.hpPct += st.apex;
     }
     st.dodge = Math.min(60, st.dodge);
     const old = run.maxHp || 0;
@@ -58,7 +62,7 @@
 
   function snapshot(run) {
     run.snap = {
-      v: 1, diff: run.diff, rs: run.rs, wave: run.wave, lvl: run.lvl, xp: run.xp, t: run.t,
+      v: 1, diff: run.diff, meta: Object.assign({}, run.meta), rs: run.rs, wave: run.wave, lvl: run.lvl, xp: run.xp, t: run.t,
       hpF: run.hp / run.maxHp, forms: run.forms.slice(), skills: run.skills.map((s) => ({ id: s.id, lvl: s.lvl })),
       muts: Object.assign({}, run.muts), pend: run.pend.slice(), rerolls: run.rerolls, kills: run.kills,
       bosses: run.bosses, soul: run.soul, revived: run.revived, dmgBy: Object.assign({}, run.dmgBy),
@@ -81,14 +85,14 @@
     recalc(run);
     run.hp = run.maxHp;
     run.rerolls = run.st.rerolls;
-    run.pend.push("skill");
+    for (let i = 0; i <= run.st.startSkill; i++) run.pend.push("skill");
     for (let i = 0; i < run.st.startLv; i++) run.pend.push("mut");
     snapshot(run);
     return run;
   }
 
   function restore(snap, meta) {
-    const run = blank(meta, snap.diff, snap.rs);
+    const run = blank(snap.meta || meta, snap.diff, snap.rs);
     for (const k of ["wave", "lvl", "xp", "t", "rerolls", "kills", "bosses", "soul", "revived"]) run[k] = snap[k];
     run.forms = snap.forms.filter((id) => D.FORMS[id]);
     run.skills = snap.skills.filter((s) => D.SKILLS[s.id]).map((s) => ({ id: s.id, lvl: s.lvl, cd: 0 }));
@@ -118,6 +122,13 @@
     return out;
   }
 
+  /* 变异的前置：必须已经拥有能让它生效的来源，形态亲和不算 */
+  function reqOk(run, m, own) {
+    const s = run.st, src = { brood: s.minions > 0, poison: s.thornPoison > 0 || s.minionPoison > 0 || s.symb > 0, fire: s.symb > 0 };
+    const has = (t) => !t || own[t] || src[t];
+    return has(m.req) && has(m.req2);
+  }
+
   function makeChoice(run, kind) {
     const n = 3 + run.st.choices;
     let cands = [];
@@ -139,14 +150,14 @@
       if (has[id]) {
         if (kind === "mut" && has[id].lvl < 5) cands.push({ k: "skill", id, w: 4 * tagW(sk.tag) });
       } else if (run.skills.length < run.slots) {
-        cands.push({ k: "skill", id, w: (run.skills.length < 2 ? 5 : 2.2) * tagW(sk.tag) });
+        cands.push({ k: "skill", id, w: (run.skills.length < 2 ? 9 : 7) * tagW(sk.tag) });
       }
     }
     if (kind === "mut") {
       for (const id in D.MUTS) {
         const m = D.MUTS[id];
         if ((run.muts[id] || 0) >= m.max) continue;
-        if (m.req && !own[m.req] && !aff[m.req]) continue;
+        if (!reqOk(run, m, own)) continue;
         cands.push({ k: "mut", id, w: [0, 4, 2.4, 1.1][m.rar] * tagW(m.tag) });
       }
     }
@@ -183,26 +194,26 @@
     return null;
   }
 
-  /* 自动选择：prefs 为偏好标签数组；为空时沿用当前形态的亲和标签。 */
+  /* 自动选择。原则：技能位没满时先拿技能；偏好只加分不排除；不拿会减生命上限的变异。 */
   function autoPick(run, prefs) {
     const c = run.choice;
     if (!c) return null;
-    let pf = {};
+    const pf = {}, af = affTags(run), own = ownedTags(run);
     for (const t of prefs || []) pf[t] = 1;
-    if (!Object.keys(pf).length) pf = affTags(run);
-    const any = Object.keys(pf).length > 0;
-    let best = 0, bs = -1;
+    const w = (t) => (pf[t] ? 1 : af[t] ? 0.75 : 0);
+    let best = 0, bs = -1e9;
     c.opts.forEach((o, i) => {
       let s = rnd(run) * 0.5;
       if (o.k === "form") {
-        for (const a of D.FORMS[o.id].aff) if (pf[a]) s += 2;
+        for (const a of D.FORMS[o.id].aff) s += (pf[a] ? 2 : 0) + (own[a] ? 1 : 0);
       } else if (o.k === "skill") {
-        const owned = run.skills.some((x) => x.id === o.id);
-        const p = pf[D.SKILLS[o.id].tag];
-        s += owned ? (p ? 6 : 3) : p ? 7 : any ? 1.5 : 4;
+        const sk = D.SKILLS[o.id], cur = run.skills.find((x) => x.id === o.id);
+        if (cur) s += 4 + 2.5 * w(sk.tag) + (cur.lvl === 2 || cur.lvl === 4 ? 0.6 : 0);
+        else s += 7 + 3 * w(sk.tag);
       } else {
         const m = D.MUTS[o.id];
-        s += 1 + m.rar + (m.tag ? (pf[m.tag] ? 3.5 : -1) : 0.8);
+        s += 1 + m.rar + (m.tag ? Math.max(3 * w(m.tag), own[m.tag] ? 1.5 : 0) : 0.8);
+        if (m.st.some(([k, v]) => k === "hpPct" && v < 0)) s -= 9;
       }
       if (s > bs) (bs = s), (best = i);
     });
@@ -251,7 +262,7 @@
         e.chill = 2.5;
         if (rnd(run) * 100 < s.freeze) e.frz = Math.max(e.frz, e.boss ? 0.4 : 1.4);
       } else if (tag === "fire" && !o.noBurn) {
-        e.burn = Math.max(e.burn, base * 0.5);
+        e.burn = Math.max(e.burn, base * 0.75);
         e.burnT = 3 * (1 + s.dur / 100);
       } else if (tag === "light" && !o.sec) {
         if (s.overload && e.burnT > 0) run.q.push({ x: e.x, y: e.y, r: 48, base: (base * s.overload) / 100, tag: "fire", o: { sec: 1 } });
@@ -276,9 +287,13 @@
     }
   }
 
-  function kill(run, e) {
+  function kill(run, e, self) {
     if (e.dead) return;
     e.dead = true;
+    if (self) {
+      run._k = -1;
+      return fx(run, { t: "die", x: e.x, y: e.y, r: e.r, c: e.c });
+    }
     const s = run.st;
     run.kills++;
     run.xp += e.xp * (1 + s.xp / 100);
@@ -358,13 +373,13 @@
     const E = D.ENEMIES[type], df = D.DIFFS[run.diff], w = run.wave;
     const elite = !E.boss && type !== "mite" && w >= 12 && rnd(run) < 0.03 + w * 0.002;
     if (x === undefined) {
-      const a = rnd(run) * Math.PI * 2, d = 152 + rnd(run) * 10;
+      const a = rnd(run) * Math.PI * 2, d = (w === 1 && run.wt < 2 ? 95 : 152) + rnd(run) * 10;
       x = Math.cos(a) * d;
       y = Math.sin(a) * d;
     }
-    const hp = E.hp * hpMul(w) * df.hp * (elite ? 4 : 1) * (E.boss ? 1 + w / 10 : 1);
+    const hp = E.hp * hpMul(w) * df.hp * (elite ? 4 : 1) * (E.boss ? 2 * (1 + w / 10) : 1);
     const e = {
-      id: run.eid++, type, x, y, hp, max: hp, sp: E.sp * (0.72 + rnd(run) * 0.16), dm: E.dm * dmMul(w) * df.dm * (elite ? 1.5 : 1),
+      id: run.eid++, type, x, y, hp, max: hp, sp: E.sp * (0.72 + rnd(run) * 0.16), dm: E.dm * dmMul(w) * df.dm * (elite ? 1.5 : 1) * (E.boss ? 2 : 1),
       r: E.r * (elite ? 1.35 : 1), xp: E.xp * (elite ? 5 : 1), arm: E.arm || 0, boss: !!E.boss, ranged: !!E.ranged, bomb: !!E.bomb,
       split: !!E.split, elite, c: E.c, at: rnd(run), psn: 0, psnD: 0, psnT: 0, burn: 0, burnT: 0, chill: 0, frz: 0, oc: 0, dt: rnd(run) * 0.5, dead: false,
     };
@@ -404,7 +419,7 @@
 
   const CAST = {
     claw(run, sk, m, ex) {
-      const ts = nearest(run, 0, 0, PR + 46, 2 + ex);
+      const ts = nearest(run, 0, 0, PR + 68, 2 + ex);
       if (!ts.length) return false;
       for (const e of ts) {
         fx(run, { t: "slash", x: e.x, y: e.y });
@@ -435,7 +450,7 @@
       const R = 105 * (1 + run.st.area / 200);
       const ts = nearest(run, 0, 0, R, 1);
       if (!ts.length) return false;
-      const a = Math.atan2(ts[0].y, ts[0].x), half = 0.5 + ex * 0.15;
+      const a = Math.atan2(ts[0].y, ts[0].x), half = 0.85 + ex * 0.2;
       fx(run, { t: "cone", a, half, r: R });
       for (const e of run.enemies) {
         if (e.dead) continue;
@@ -452,14 +467,14 @@
       if (!first) return false;
       let cur = first, px = 0, py = 0, b = sk.b * m;
       const seen = {};
-      for (let i = 0; i < 3 + ex + run.st.chain && cur; i++) {
+      for (let i = 0; i < 4 + ex + run.st.chain && cur; i++) {
         seen[cur.id] = 1;
         fx(run, { t: "bolt", x1: px, y1: py, x2: cur.x, y2: cur.y });
         px = cur.x;
         py = cur.y;
         hit(run, cur, b, "light");
         b *= 0.88;
-        let nx = null, nd = 90 * 90;
+        let nx = null, nd = 110 * 110;
         for (const e of run.enemies) {
           if (e.dead || seen[e.id]) continue;
           const dx = e.x - px, dy = e.y - py, d = dx * dx + dy * dy;
@@ -486,7 +501,7 @@
       return true;
     },
     thorn(run, sk, m, ex) {
-      const R = 70 * (1 + ex * 0.15);
+      const R = 84 * (1 + ex * 0.15);
       if (!nearest(run, 0, 0, R * (1 + run.st.area / 100), 1).length) return false;
       aoe(run, 0, 0, R, sk.b * m + run.st.armor * 0.25, "armor");
       return true;
@@ -502,7 +517,7 @@
       heal(run, run.maxHp * 0.004);
       if (!e.dead) {
         addPoison(run, e, 1, 2.2);
-        e.burn = Math.max(e.burn, base * 0.5);
+        e.burn = Math.max(e.burn, base * 0.75);
         e.burnT = 3;
         e.chill = 2;
       }
@@ -523,13 +538,14 @@
     if (!run.started) {
       run.started = 1;
       snapshot(run);
+      if (W === 1) run.debt = 4;
       if (bossW) spawn(run, "boss");
     }
     run.wt += dt;
-    const N = (6 + 2.4 * W) * (bossW ? 0.5 : 1);
-    if (run.wt < 15) run.debt += (N / 15) * dt;
-    else if (bossW && run.bossAlive) run.debt += (N / 30) * dt;
-    while (run.debt >= 1 && run.enemies.length < 70) {
+    const N = (18 + 8 * W) * (bossW ? 0.6 : 1);
+    if (run.wt < D.WAVE_T) run.debt += (N / D.WAVE_T) * dt;
+    else if (bossW && run.bossAlive) run.debt += (N / 40) * dt;
+    while (run.debt >= 1 && run.enemies.length < 130) {
       run.debt--;
       spawn(run, pickType(run));
     }
@@ -568,7 +584,7 @@
     }
     if (orb) {
       run.orbA += 2.6 * dt * haste;
-      const n = 2 + extra(orb.lvl) + s.proj, R = 50 * (1 + s.area / 200), b = D.SKILLS.orbit.b * lvlMul(orb.lvl);
+      const n = 2 + extra(orb.lvl) + s.proj, R = (30 + 26 * (1 + Math.sin(run.t * 1.6))) * (1 + s.area / 200), b = D.SKILLS.orbit.b * lvlMul(orb.lvl);
       run.orbN = n;
       run.orbR = R;
       for (let i = 0; i < n; i++) {
@@ -585,7 +601,7 @@
     } else run.orbN = 0;
 
     /* 幼虫 */
-    const mc = (brood ? 2 + (brood.lvl >= 2 ? 1 : 0) + (brood.lvl >= 4 ? 1 : 0) + s.proj : 0) + s.minions;
+    const mc = (brood ? 3 + (brood.lvl >= 2 ? 1 : 0) + (brood.lvl >= 4 ? 1 : 0) + s.proj : 0) + s.minions;
     while (run.minions.length < mc) run.minions.push({ x: 0, y: 0, cd: 0, a: run.minions.length * 2.4 });
     run.minions.length = Math.min(run.minions.length, mc);
     const mb = D.SKILLS.brood.b * lvlMul(brood ? brood.lvl : 1);
@@ -604,7 +620,7 @@
         tx = Math.cos(mn.a) * 34;
         ty = Math.sin(mn.a) * 34;
       }
-      const dx = tx - mn.x, dy = ty - mn.y, d = Math.hypot(dx, dy) || 1, mv = Math.min(d, 130 * dt);
+      const dx = tx - mn.x, dy = ty - mn.y, d = Math.hypot(dx, dy) || 1, mv = Math.min(d, 175 * dt);
       mn.x += (dx / d) * mv;
       mn.y += (dy / d) * mv;
       if (tg && d < tg.r + 8 && mn.cd <= 0) {
@@ -665,7 +681,7 @@
         e.frz -= dt;
         continue;
       }
-      const d = Math.hypot(e.x, e.y) || 1, stop = e.ranged ? 105 : PR + e.r;
+      const d = Math.hypot(e.x, e.y) || 1, stop = e.ranged ? 76 : PR + e.r;
       if (d > stop) {
         const mv = e.sp * (e.chill > 0 ? 0.6 : 1) * dt;
         e.x -= (e.x / d) * mv;
@@ -677,7 +693,7 @@
         } else if (e.bomb) {
           fx(run, { t: "boom", x: e.x, y: e.y, r: 26, tag: "fire" });
           hurt(run, e.dm, null);
-          kill(run, e);
+          kill(run, e, true);
         } else {
           e.at = 1.2;
           hurt(run, e.dm, e);
@@ -718,10 +734,25 @@
     }
   }
 
+  /* 离线结算。hist 为最近几局 {dna, wall}（wall 为真实秒数）；效率打五折；每小时有上限。 */
+  function metaTotal() {
+    let t = 0;
+    for (const id in D.META) for (let i = 0; i < D.META[id].max; i++) t += Math.round(D.META[id].c * Math.pow(D.META[id].g, i));
+    return t;
+  }
+  const offlineHourCap = () => Math.floor((metaTotal() * 0.1) / 8);
+  function offlineGain(hist, sec) {
+    let dna = 0, wall = 0;
+    for (const h of hist || []) if (h && h.dna >= 0 && h.wall > 0) (dna += h.dna), (wall += h.wall);
+    if (!(wall > 0) || !(sec > 0)) return 0;
+    sec = Math.min(sec, 8 * 3600);
+    return Math.max(0, Math.floor(Math.min((dna / wall) * sec * 0.5, (offlineHourCap() * sec) / 3600)));
+  }
+
   function dnaOf(run) {
     const df = D.DIFFS[run.diff];
     return Math.round(((run.wave - 1) * 1.2 + run.bosses * 5 + (run.over === "win" ? 25 : 0)) * df.dna * (1 + run.st.dna / 100));
   }
 
-  G.EvoSim = { newRun, restore, step, pick, reroll, autoPick, recalc, need, dnaOf, lvlMul, extra, optTag, PR };
+  G.EvoSim = { newRun, restore, step, pick, reroll, autoPick, recalc, need, dnaOf, offlineGain, offlineHourCap, metaTotal, hit, spawn, lvlMul, extra, optTag, PR };
 })(typeof window !== "undefined" ? window : globalThis);

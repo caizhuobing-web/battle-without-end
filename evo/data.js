@@ -11,18 +11,18 @@
     armor: { n: "甲壳", c: "#c9a04e" },
   };
 
-  /* 技能：cd 冷却秒，b 基础伤害。每级伤害 +35%，3 级与 5 级各 +1 数量。 */
+  /* 技能：rg 攻击距离（近身、中程、全皿），cd 冷却秒，b 基础伤害。每级伤害 +35%，3 级与 5 级各 +1 数量。 */
   const SKILLS = {
-    claw: { n: "撕裂利爪", tag: "phys", cd: 0.7, b: 13, d: "撕咬身边最近的 2 个敌人" },
-    spike: { n: "骨刺射击", tag: "phys", cd: 1.1, b: 16, d: "向最近的敌人射出骨刺，可穿透 2 个敌人" },
-    orbit: { n: "环绕骨环", tag: "phys", cd: 0, b: 9, d: "2 枚骨环绕身旋转，切割碰到的敌人" },
-    spore: { n: "剧毒孢子", tag: "poison", cd: 2.0, b: 3.4, d: "在敌人脚下生成毒云，云中的敌人每 0.5 秒中毒 1 层" },
-    flame: { n: "烈焰吐息", tag: "fire", cd: 1.4, b: 16, d: "向最近的敌人喷出扇形火焰，并点燃命中的敌人" },
-    arc: { n: "连锁电弧", tag: "light", cd: 1.2, b: 21, d: "电弧在 3 个敌人之间弹跳，每次弹跳伤害 -12%" },
-    nova: { n: "冰霜新星", tag: "cold", cd: 2.6, b: 18, d: "冰环冲击周围所有敌人，并使其减速 2.5 秒" },
-    drain: { n: "血噬触须", tag: "blood", cd: 1.0, b: 12, d: "吸取生命最高的敌人，伤害的 35% 转为生命" },
-    brood: { n: "孵化虫群", tag: "brood", cd: 0, b: 8, d: "孵化 2 只幼虫，幼虫自动追咬敌人" },
-    thorn: { n: "棘刺甲壳", tag: "armor", cd: 2.5, b: 11, d: "每级护甲 +6，反伤近战敌人，并周期性向四周释放棘刺" },
+    claw: { n: "撕裂利爪", tag: "phys", rg: "近身", cd: 0.7, b: 13, d: "撕咬身边最近的 2 个敌人" },
+    spike: { n: "骨刺射击", tag: "phys", rg: "全皿", cd: 1.1, b: 16, d: "向最近的敌人射出骨刺，可穿透 2 个敌人" },
+    orbit: { n: "环绕骨环", tag: "phys", rg: "近身", cd: 0, b: 9, d: "2 枚骨环绕身旋转，切割碰到的敌人" },
+    spore: { n: "剧毒孢子", tag: "poison", rg: "全皿", cd: 2.0, b: 3.4, d: "在敌人脚下生成毒云，云中的敌人每 0.5 秒中毒 1 层" },
+    flame: { n: "烈焰吐息", tag: "fire", rg: "中程", cd: 1.3, b: 18, d: "向最近的敌人喷出扇形火焰，并点燃命中的敌人" },
+    arc: { n: "连锁电弧", tag: "light", rg: "全皿", cd: 1.0, b: 23, d: "电弧在 4 个敌人之间弹跳，每次弹跳伤害 -12%" },
+    nova: { n: "冰霜新星", tag: "cold", rg: "近身", cd: 2.6, b: 18, d: "冰环冲击周围所有敌人，并使其减速 2.5 秒" },
+    drain: { n: "血噬触须", tag: "blood", rg: "全皿", cd: 1.0, b: 12, d: "吸取生命最高的敌人，伤害的 35% 转为生命" },
+    brood: { n: "孵化虫群", tag: "brood", rg: "全皿", cd: 0, b: 10, d: "孵化 3 只幼虫，幼虫自动追咬敌人" },
+    thorn: { n: "棘刺甲壳", tag: "armor", rg: "近身", cd: 2.5, b: 11, d: "每级护甲 +6，反伤近战敌人，并周期性向四周释放棘刺" },
   };
 
   /* 变异：rar 1 普通 2 稀有 3 史诗；max 可叠层数；req 需要已拥有对应标签的技能或形态亲和。 */
@@ -57,7 +57,7 @@
     psnCap: { n: "浓缩毒囊", tag: "poison", rar: 2, max: 3, req: "poison", st: [["poisonCap", 5]], d: "中毒层数上限 +5" },
     psnSpread: { n: "传染孢子", tag: "poison", rar: 3, max: 2, req: "poison", st: [["poisonSpread", 50]], d: "中毒的敌人死亡时，把 50% 的中毒层数传给附近 3 个敌人" },
     burnExp: { n: "爆燃体液", tag: "fire", rar: 3, max: 2, req: "fire", st: [["burnExplode", 2]], d: "点燃的敌人死亡时爆炸，伤害为其生命上限的 2%" },
-    overload: { n: "过载神经", tag: "light", rar: 3, max: 2, req: "light", st: [["overload", 60]], d: "雷电命中点燃的敌人时引发爆炸，伤害为该次命中的 60%" },
+    overload: { n: "过载神经", tag: "light", rar: 3, max: 2, req: "light", req2: "fire", st: [["overload", 60]], d: "雷电命中点燃的敌人时引发爆炸，伤害为该次命中的 60%" },
     chain: { n: "导电黏液", tag: "light", rar: 2, max: 3, req: "light", st: [["chain", 1]], d: "电弧弹跳次数 +1" },
     shatter: { n: "碎冰颚", tag: "cold", rar: 2, max: 3, req: "cold", st: [["shatter", 30]], d: "对减速或冻结的敌人，伤害 +30%" },
     freeze: { n: "深寒腺", tag: "cold", rar: 2, max: 3, req: "cold", st: [["freeze", 12]], d: "冰霜命中时，12% 概率冻结敌人 1.4 秒" },
@@ -103,13 +103,13 @@
 
   /* 敌人：hp 生命，sp 速度，dm 伤害，r 半径，xp 经验，w 起始波次，wt 权重。 */
   const ENEMIES = {
-    grunt: { n: "游荡体", hp: 20, sp: 38, dm: 5, r: 9, xp: 1, w: 1, wt: 10, c: "#c85a6a" },
-    fast: { n: "迅捷体", hp: 10, sp: 78, dm: 3, r: 7, xp: 1, w: 2, wt: 5, c: "#e8c04a" },
-    spit: { n: "喷吐体", hp: 16, sp: 34, dm: 6, r: 9, xp: 2, w: 4, wt: 3, c: "#5ac8a0", ranged: 1 },
-    tank: { n: "重甲体", hp: 75, sp: 24, dm: 10, r: 13, xp: 3, w: 6, wt: 3, c: "#8a8fa8", arm: 0.3 },
-    split: { n: "分裂体", hp: 34, sp: 34, dm: 5, r: 11, xp: 2, w: 8, wt: 3, c: "#d070c8", split: 1 },
-    bomb: { n: "自爆体", hp: 14, sp: 62, dm: 16, r: 8, xp: 2, w: 11, wt: 3, c: "#ff6030", bomb: 1 },
-    mite: { n: "碎片", hp: 8, sp: 60, dm: 3, r: 5, xp: 0.5, w: 99, wt: 0, c: "#d070c8" },
+    grunt: { n: "游荡体", hp: 20, sp: 38, dm: 5, r: 9, xp: 0.3, w: 1, wt: 10, c: "#c85a6a" },
+    fast: { n: "迅捷体", hp: 10, sp: 78, dm: 3, r: 7, xp: 0.3, w: 2, wt: 5, c: "#e8c04a" },
+    spit: { n: "喷吐体", hp: 16, sp: 34, dm: 6, r: 9, xp: 0.6, w: 4, wt: 3, c: "#5ac8a0", ranged: 1 },
+    tank: { n: "重甲体", hp: 75, sp: 24, dm: 10, r: 13, xp: 0.9, w: 6, wt: 3, c: "#8a8fa8", arm: 0.3 },
+    split: { n: "分裂体", hp: 34, sp: 34, dm: 5, r: 11, xp: 0.6, w: 8, wt: 3, c: "#d070c8", split: 1 },
+    bomb: { n: "自爆体", hp: 14, sp: 62, dm: 16, r: 8, xp: 0.6, w: 11, wt: 3, c: "#ff6030", bomb: 1 },
+    mite: { n: "碎片", hp: 8, sp: 60, dm: 3, r: 5, xp: 0.15, w: 99, wt: 0, c: "#d070c8" },
     boss: { n: "领主", hp: 340, sp: 18, dm: 12, r: 24, xp: 30, w: 99, wt: 0, c: "#ff3c6e", boss: 1 },
   };
 
@@ -124,15 +124,22 @@
     reroll: { n: "基因重组", st: [["rerolls", 1]], c: 20, g: 2, max: 5, d: "每局可重抽变异的次数 +1" },
     heir: { n: "遗传记忆", st: [["startLv", 1]], c: 40, g: 2.5, max: 3, d: "开局额外获得 1 个变异" },
     fourth: { n: "第四选项", st: [["choices", 1]], c: 150, g: 1, max: 1, d: "每次选择变异时多 1 个选项" },
+    /* 第二层：req 为需要先完成的培养皿数量 */
+    twin: { n: "双生技能", st: [["startSkill", 1]], c: 120, g: 1, max: 1, req: 1, d: "开局多选 1 个技能" },
+    vit2: { n: "进阶体质", st: [["hpPct", 6]], c: 50, g: 1.3, max: 10, req: 1, d: "生命上限 +6%" },
+    fang2: { n: "进阶利齿", st: [["dmg", 5]], c: 50, g: 1.3, max: 10, req: 1, d: "伤害 +5%" },
+    shell2: { n: "进阶外骨骼", st: [["armor", 4]], c: 60, g: 1.3, max: 10, req: 2, d: "护甲 +4" },
+    meta2: { n: "进阶代谢", st: [["regen", 0.8]], c: 60, g: 1.3, max: 10, req: 2, d: "每秒回复 +0.8 生命" },
+    apex: { n: "终极适应", st: [["apex", 12]], c: 150, g: 1.5, max: 5, req: 3, d: "进化到终极形态后，伤害与生命上限 +12%" },
   };
 
   const DIFFS = [
     { n: "一号皿 清水", hp: 1, dm: 1, dna: 1 },
-    { n: "二号皿 淤泥", hp: 1.7, dm: 1.35, dna: 1.6 },
-    { n: "三号皿 温泉", hp: 2.9, dm: 1.8, dna: 2.4 },
-    { n: "四号皿 酸液", hp: 5, dm: 2.4, dna: 3.4 },
-    { n: "五号皿 熔盐", hp: 8.5, dm: 3.2, dna: 4.8 },
-    { n: "六号皿 深渊", hp: 15, dm: 4.3, dna: 6.5 },
+    { n: "二号皿 淤泥", hp: 1.45, dm: 1.25, dna: 1.6 },
+    { n: "三号皿 温泉", hp: 2.0, dm: 1.5, dna: 2.4 },
+    { n: "四号皿 酸液", hp: 2.3, dm: 1.65, dna: 3.4 },
+    { n: "五号皿 熔盐", hp: 2.7, dm: 1.8, dna: 4.8 },
+    { n: "六号皿 深渊", hp: 3.1, dm: 1.97, dna: 6.5 },
   ];
 
   G.EvoData = { TAGS, SKILLS, MUTS, FORMS, ENEMIES, META, DIFFS, WAVES: 30, WAVE_T: 20 };
