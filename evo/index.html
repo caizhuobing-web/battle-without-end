@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+    <meta name="theme-color" content="#0a0f14" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>万变之种</title>
+    <link rel="stylesheet" href="./style.css?v=1" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="top">
+        <div class="brand"><span class="seed"></span>万变之种</div>
+        <div class="res" title="DNA：用于永久基因强化">🧬 <b id="dna">0</b></div>
+        <button id="bAuto" class="chip" title="自动选择变异并自动重开">挂机 关</button>
+        <button id="bSpd" class="chip" title="游戏速度">×1</button>
+        <button id="bPause" class="chip ic" title="暂停（空格）">⏸</button>
+        <button id="bSnd" class="chip ic" title="声音">🔊</button>
+      </header>
+      <main>
+        <section id="stage">
+          <div id="hud">
+            <div class="row">
+              <span id="wv" class="lbl">第 1 波</span>
+              <div class="bar wave"><i id="wvBar"></i></div>
+              <span id="diffN" class="lbl dim"></span>
+            </div>
+            <div class="row">
+              <div class="bar hp"><i id="shBar"></i><i id="hpBar"></i><em id="hpTxt"></em></div>
+            </div>
+            <div class="row">
+              <span id="lvTxt" class="lbl">Lv 1</span>
+              <div class="bar xp"><i id="xpBar"></i></div>
+              <span id="formN" class="lbl form"></span>
+            </div>
+          </div>
+          <div id="cvWrap">
+            <canvas id="cv"></canvas>
+            <div id="bossBar" hidden><span>领主</span><div class="bar boss"><i id="bossFill"></i></div></div>
+            <div id="toast"></div>
+            <div id="start"></div>
+          </div>
+          <div id="skills"></div>
+        </section>
+        <section id="side">
+          <nav id="tabs">
+            <button data-tab="build" class="on">战况</button>
+            <button data-tab="tree">进化树</button>
+            <button data-tab="gene">基因</button>
+            <button data-tab="opt">设置</button>
+          </nav>
+          <div id="panel"></div>
+        </section>
+      </main>
+      <div id="modal" hidden></div>
+    </div>
+    <script src="./data.js?v=1"></script>
+    <script src="./sim.js?v=1"></script>
+    <script src="./audio.js?v=1"></script>
+    <script src="./render.js?v=1"></script>
+    <script src="./ui.js?v=1"></script>
+  </body>
+</html>
