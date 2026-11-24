@@ -1,0 +1,120 @@
+/* 万丈深渊：样式。颜色只用 docs/art-bible.md 的色板。 */
+@font-face {
+  font-family: "FusionPixel";
+  src: url("./font.woff2") format("woff2");
+  font-display: block;
+}
+:root {
+  --coal: #0f0d12;
+  --night: #1b1c24;
+  --iron: #2b2d38;
+  --hi: #4a4d5e;
+  --rust: #3c3a46;
+  --frost: #8b93a6;
+  --snow: #e8ecf2;
+  --ember: #ff8a3d;
+  --emberHi: #ffc07a;
+  --hearth: #c8442c;
+  --o2: #6fd3e0;
+  --load: #b08a5a;
+  --blood: #e0505a;
+  --hunter: #e8c45a;
+  --guard: #7fa8d8;
+  --stoker: #e0704a;
+  --fs: 12px;
+}
+@media (min-width: 400px) {
+  :root { --fs: 12px; }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--night); color: var(--snow); height: 100%; }
+body {
+  font-family: "FusionPixel", monospace;
+  font-size: calc(var(--fs) * 1);
+  line-height: 1.5;
+  -webkit-font-smoothing: none;
+  -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
+}
+@media (min-width: 360px) { body { font-size: 12px; } }
+#app { max-width: 1100px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+#top { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--iron); border-bottom: 2px solid var(--rust); position: sticky; top: 0; z-index: 5; }
+.brand { color: var(--ember); font-size: 24px; line-height: 1; white-space: nowrap; }
+#res { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; align-items: center; min-width: 0; }
+#res span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+main { flex: 1; display: flex; flex-direction: column; }
+#stage { position: relative; background: var(--coal); }
+#cv { display: block; width: 100%; max-width: 768px; margin: 0 auto; aspect-ratio: 3 / 2; image-rendering: pixelated; image-rendering: crisp-edges; }
+#toast { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); background: var(--coal); border: 2px solid var(--ember); padding: 4px 10px; max-width: 92%; text-align: center; }
+#panel { padding: 8px 12px 24px; display: flex; flex-direction: column; gap: 8px; }
+.card { background: var(--iron); border: 2px solid var(--rust); box-shadow: inset 0 1px 0 var(--hi); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.card.tide { border-color: var(--hearth); }
+h3 { font-size: 12px; color: var(--emberHi); font-weight: normal; }
+h4 { font-size: 12px; font-weight: normal; color: var(--snow); }
+p, small { overflow-wrap: anywhere; }
+small { display: block; font-size: 12px; }
+.dim { color: var(--frost); }
+.lack { color: var(--blood); }
+.c-hunter { color: var(--hunter); }
+.c-guard { color: var(--guard); }
+.c-stoker { color: var(--stoker); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btns.col { flex-direction: column; align-items: stretch; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.btn { background: var(--iron); border: 2px solid var(--rust); box-shadow: inset 0 1px 0 var(--hi); padding: 8px 12px; min-height: 44px; text-align: left; }
+.btn.main { background: var(--ember); color: var(--coal); border-color: var(--coal); box-shadow: inset 0 1px 0 var(--emberHi); }
+.btn.big { flex: 1; text-align: center; font-size: 24px; line-height: 1.2; }
+.btn.warn { border-color: var(--hearth); color: var(--blood); }
+.btn:active:not(:disabled) { transform: translateY(2px); }
+.btn:disabled { opacity: 1; color: var(--frost); background: var(--night); border-color: var(--rust); box-shadow: none; cursor: default; }
+.btn.main:disabled { color: var(--frost); }
+.btn:focus-visible, .node:focus-visible, .chip:focus-visible, .tabs button:focus-visible { outline: 2px solid var(--snow); outline-offset: 1px; }
+kbd { font: inherit; color: var(--frost); margin-left: 4px; }
+.btn.main kbd { color: var(--iron); }
+@media (hover: none) { kbd { display: none; } }
+.chip { background: var(--night); border: 2px solid var(--rust); padding: 4px 8px; min-height: 36px; }
+.chip.on { border-color: var(--ember); color: var(--emberHi); }
+.seg { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.lbl { white-space: nowrap; }
+.ic { width: 16px; height: 16px; image-rendering: pixelated; flex: none; }
+.bar { position: relative; flex: 1; min-width: 60px; height: 8px; background: var(--coal); border: 1px solid var(--rust); }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; }
+.bar b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--snow); }
+.bar.o2 i { background: var(--o2); }
+.bar.load i { background: var(--load); }
+.bar.hearth i { background: var(--hearth); }
+.hud { background: var(--iron); border: 2px solid var(--rust); padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; }
+.hud .team { gap: 12px; }
+.nodes { display: flex; flex-direction: column; gap: 6px; }
+.node { display: flex; align-items: center; gap: 8px; background: var(--night); border: 2px solid var(--rust); padding: 6px 8px; text-align: left; min-height: 48px; }
+.node:hover { border-color: var(--frost); }
+.node span { flex: 1; display: flex; flex-direction: column; }
+.node b { font-weight: normal; }
+.tac { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--rust); padding-top: 6px; }
+.tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; }
+.tabs button { background: var(--iron); border: 2px solid var(--rust); padding: 6px 0; min-height: 40px; }
+.tabs button.on { border-color: var(--ember); color: var(--emberHi); }
+.tabBody { display: flex; flex-direction: column; gap: 8px; }
+.log { padding: 4px 2px; }
+.log h4 { color: var(--frost); }
+.log p { color: var(--frost); }
+.log p:first-of-type { color: var(--snow); }
+#modal { position: fixed; inset: 0; background: var(--coal); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+#modal[hidden] { display: none; }
+#modal .box { background: var(--iron); border: 2px solid var(--ember); box-shadow: inset 0 1px 0 var(--hi); padding: 12px 14px; max-width: 420px; width: 100%; max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+textarea { width: 100%; height: 96px; background: var(--coal); color: var(--snow); border: 2px solid var(--rust); font: inherit; padding: 6px; resize: vertical; }
+.rescue { padding: 16px; max-width: 32em; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+
+/* 横屏和桌面：画面在左，面板在右。 */
+@media (min-aspect-ratio: 4/3) and (min-width: 640px) {
+  main { flex-direction: row; align-items: flex-start; }
+  #stage { flex: 0 0 auto; width: min(58vw, calc((100vh - 60px) * 1.5)); position: sticky; top: 46px; }
+  #panel { flex: 1; min-width: 0; max-height: calc(100vh - 46px); overflow-y: auto; }
+}
+@media (max-width: 380px) {
+  .brand { font-size: 12px; }
+  #top { gap: 6px; padding: 6px 8px; }
+  #res { gap: 6px; }
+  .tabs button { font-size: 12px; }
+}

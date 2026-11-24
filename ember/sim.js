@@ -24,6 +24,7 @@
       route: 0, // 已修复段数
       cleared: {}, // 已清据点的层
       flags: {},
+      tactic: { stance: "cover", mode: "blanket", breach: true }, // 进阶后的战前选择，跨下潜保留
       dives: 0,
       idleAt: now || 0,
       idleBank: 0,
@@ -123,11 +124,15 @@
       enc: null,
       event: null,
       anchor: false,
-      stance: "cover",
-      mode: "blanket",
-      breach: true,
+      stance: s.tactic.stance,
+      mode: s.tactic.mode,
+      breach: s.tactic.breach,
     };
     s.dives++;
+    if (s.hearth <= 0) {
+      for (const m of s.dive.team) m.hp = Math.round(m.hp * 0.7);
+      say(s, "炉火已熄，大家没睡暖。出发时生命 -30%。");
+    }
     say(s, "出发下潜。氧气 " + o2 + "。");
     return s.dive;
   }
@@ -275,7 +280,10 @@
       const strongest = live.reduce((a, b) => (b.hp > a.hp ? b : a));
       const mul = breached && strongest.breached ? 1.3 : 1;
       if (m.id === "hunter") {
-        if (breached && !strongest.breached) strongest.breached = true;
+        if (breached && !strongest.breached) {
+          strongest.breached = true; // 破甲占用这一轮的攻击
+          continue;
+        }
         strongest.hp -= m.atk * mul * (live.length > 2 ? 0.8 : 1.2);
       } else if (m.id === "guard") {
         const counter = s.cls.guard.adv && d.stance === "counter";
@@ -306,10 +314,42 @@
     }
   }
 
+  /* 逐轮快照，供界面回放战斗。 */
+  function snap(d) {
+    return { t: d.team.map((m) => Math.max(0, Math.round(m.hp))), f: d.enc.foes.map((f) => Math.max(0, Math.round(f.hp))), b: d.enc.foes.map((f) => (f.breached ? 1 : 0)) };
+  }
+  function runRounds(s) {
+    const d = s.dive, enc = d.enc;
+    const frames = [snap(d)];
+    let r = 0;
+    while (r++ < MAX_ROUNDS && enc.foes.some((f) => f.hp > 0) && d.team.some((m) => m.hp > 0)) {
+      fightRound(s);
+      frames.push(snap(d));
+    }
+    s.fx = { e: enc.e, boss: !!enc.boss, layer: d.layer, max: d.team.map((m) => m.max), frames };
+  }
+  /* 战前预估：换 5 个随机种子在副本上各打一遍。返回 {win 胜场数, n 总场数, left 胜局平均剩余生命比例}。 */
+  function forecast(s) {
+    let win = 0, left = 0;
+    const N = 5;
+    for (let i = 0; i < N; i++) {
+      const c = JSON.parse(JSON.stringify(s));
+      c.log = [];
+      c.rs = (c.rs + 7919 * (i + 1)) | 0;
+      const d = c.dive;
+      let r = 0;
+      while (r++ < MAX_ROUNDS && d.enc.foes.some((f) => f.hp > 0) && d.team.some((m) => m.hp > 0)) fightRound(c);
+      if (d.team.some((m) => m.hp > 0) && !d.enc.foes.some((f) => f.hp > 0)) {
+        win++;
+        left += d.team.reduce((a, m) => a + Math.max(0, m.hp), 0) / d.team.reduce((a, m) => a + m.max, 0);
+      }
+    }
+    return { win, n: N, left: win ? left / win : 0 };
+  }
+
   function fight(s) {
     const d = s.dive, enc = d.enc, E = D.ENEMIES[enc.e];
-    let r = 0;
-    while (r++ < MAX_ROUNDS && enc.foes.some((f) => f.hp > 0) && d.team.some((m) => m.hp > 0)) fightRound(s);
+    runRounds(s);
     if (!d.team.some((m) => m.hp > 0)) {
       say(s, "小队倒在了" + D.LAYERS[d.layer - 1].name + "。被救回灰炉屯，背着的东西都丢了。");
       d.carry = { core: 0, mats: {} };
@@ -450,10 +490,10 @@
   function tideWave(s) {
     if (!s.tide || s.won) return null;
     const w = TIDE[s.tide.wave];
-    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: 10, mats: {} }, map: [], team: ["hunter", "guard", "stoker"].map((id) => member(s, id)), anchor: false, stance: "cover", mode: "blanket", breach: true, tide: true };
+    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: 10, mats: {} }, map: [], team: ["hunter", "guard", "stoker"].map((id) => member(s, id)), anchor: false, stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
     s.dive.enc = { e: w.e, foes: Array.from({ length: w.n }, () => ({ hp: D.ENEMIES[w.e].hp, max: D.ENEMIES[w.e].hp })), boss: true };
-    let r = 0;
-    while (r++ < MAX_ROUNDS && s.dive.enc.foes.some((f) => f.hp > 0) && s.dive.team.some((m) => m.hp > 0)) fightRound(s);
+    runRounds(s);
+    s.fx.tide = s.tide.wave + 1;
     const held = s.dive.enc.foes.every((f) => f.hp <= 0);
     if (!held) s.hearth = Math.max(0, s.hearth - 3);
     s.dive = null;
@@ -468,5 +508,10 @@
     return held;
   }
 
-  G.EmberSim = { newGame, startDive, options, moveTo, rescue, act, canDetour, goHome, returnCost, stepCost, weight, capacity, overweight, stoke, build, train, trainCost, promote, repair, routeUnlocked, idleRate, idleTick, tideWave, has, TIDE };
+  /* 设置战术：同时改本次下潜和默认值。 */
+  function setTactic(s, k, v) {
+    s.tactic[k] = v;
+    if (s.dive) s.dive[k] = v;
+  }
+  G.EmberSim = { setTactic, forecast, newGame, startDive, options, moveTo, rescue, act, canDetour, goHome, returnCost, stepCost, weight, capacity, overweight, stoke, build, train, trainCost, promote, repair, routeUnlocked, idleRate, idleTick, tideWave, has, TIDE };
 })(typeof globalThis !== "undefined" ? globalThis : window);

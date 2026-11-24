@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1c24" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>万丈深渊</title>
+    <link rel="preload" href="./font.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./style.css?v=4" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="top">
+        <div class="brand">万丈深渊</div>
+        <div id="res"></div>
+        <button id="bSnd" class="chip" type="button">有声</button>
+      </header>
+      <main>
+        <section id="stage">
+          <canvas id="cv" aria-label="画面"></canvas>
+          <div id="toast" hidden role="status"></div>
+        </section>
+        <section id="panel"></section>
+      </main>
+      <div id="modal" hidden role="dialog" aria-modal="true"></div>
+    </div>
+    <script src="./data.js?v=4"></script>
+    <script src="./sim.js?v=4"></script>
+    <script src="./audio.js?v=4"></script>
+    <script src="./pixel.js?v=4"></script>
+    <script src="./ui.js?v=4"></script>
+    <script>
+      /* 启动失败时的自救界面：不让坏存档把游戏卡死。 */
+      if (!window.__ember) {
+        var raw = "";
+        try { raw = localStorage.getItem("wzsy.save.v1") || ""; } catch (e) {}
+        document.getElementById("app").innerHTML =
+          '<div class="rescue"><h3>游戏没能启动</h3><p>可能是存档损坏。可以先复制下面的原始存档留底，再重置存档。</p>' +
+          '<textarea readonly></textarea><p><button class="btn" id="rescue">重置存档并重新启动</button></p></div>';
+        document.querySelector("textarea").value = raw;
+        document.getElementById("rescue").onclick = function () {
+          try { localStorage.removeItem("wzsy.save.v1"); localStorage.removeItem("wzsy.save.v1.bak"); } catch (e) {}
+          location.reload();
+        };
+      }
+    </script>
+  </body>
+</html>
