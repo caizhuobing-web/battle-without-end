@@ -474,7 +474,7 @@
     return get("vig", () => {
       const cv = mk(W, H), c = cv.getContext("2d");
       c.fillStyle = PAL.coal;
-      const cx = 36, cy = FLOOR - 12;
+      const cx = HX + 6, cy = FLOOR - 12;
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++) {
           const dx = x - cx, dy = (y - cy) * 1.5, q = Math.sqrt(dx * dx + dy * dy);
@@ -594,11 +594,8 @@
   function town(c, s, t) {
     c.drawImage(townBG(s.hearth, s.route), 0, 0);
     drawHearth(c, s, t);
-    const spots = { hunter: 52, guard: 64, stoker: 102 };
-    for (const id of ["hunter", "guard", "stoker"]) {
-      const sp = teamSpr(id);
-      c.drawImage(sp.cv, spots[id], 100 - sp.h + (Math.floor(t * 1.5 + spots[id]) % 2 === 0 ? 0 : 1));
-    }
+    const sp0 = teamSpr(s.wear);
+    c.drawImage(sp0.cv, 58, 100 - sp0.h + (Math.floor(t * 1.5) % 2));
     if (s.flags.wei) {
       const sp = teamSpr("wei");
       c.drawImage(sp.cv, 118, 100 - sp.h);
@@ -649,7 +646,7 @@
     const y = Math.round(FLOOR - sp.h + 2 - row * 9 - (FLY[eid] ? 22 + ((i * 7) % 9) : 0));
     return { x, y };
   }
-  const TX = [8, 26, 44];
+  const HX = 30; // 主角站的位置
 
   /* view 由界面维护：{fight:{fx,i}, flash, floats, shake, walk, scroll, lungeT, lungeF}。 */
   function draw(c, s, view, t) {
@@ -685,7 +682,6 @@
     }
     const frame = fx ? fx.frames[Math.min(view.fight.i, fx.frames.length - 1)] : null;
     const team = s.dive ? s.dive.team : null;
-    const ids = ["hunter", "guard", "stoker"];
     const lt = view.lungeT > t ? 3 : 0, lf = view.lungeF > t ? 3 : 0;
     // 敌人
     const enc = s.dive && s.dive.enc;
@@ -704,26 +700,25 @@
         bar(c, p.x + 1, y - 4, sp.w - 2, hps[k] / (E.hp || 1), PAL.blood);
       }
     }
-    // 小队
-    ids.forEach((id, i) => {
-      const sp = teamSpr(id);
-      const hp = frame ? frame.t[i] : team ? team[i].hp : 1;
-      const max = fx ? fx.max[i] : team ? team[i].max : 1;
-      const bob = view.walk > 0 ? -(Math.floor(t * 8 + i) & 1) : Math.floor(t * 1.5 + i * 0.7) % 2;
-      const x = TX[i] + lt, y = ground - sp.h + bob;
+    // 主角：外观跟着行装走
+    {
+      const id = fx ? fx.wear : team[0].id, sp = teamSpr(id);
+      const hp = frame ? frame.t[0] : team[0].hp, max = fx ? fx.max[0] : team[0].max;
+      const bob = view.walk > 0 ? -(Math.floor(t * 8) & 1) : Math.floor(t * 1.5) % 2;
+      const x = HX + lt, y = ground - sp.h + bob;
       if (hp <= 0) {
         // 倒下：一小堆影子和一盏还亮着的灯
         c.fillStyle = PAL.coal;
-        c.fillRect(TX[i] + 1, ground - 4, sp.w - 2, 4);
+        c.fillRect(HX + 1, ground - 4, sp.w - 2, 4);
         c.fillStyle = PAL.rust;
-        c.fillRect(TX[i] + 2, ground - 3, sp.w - 5, 2);
+        c.fillRect(HX + 2, ground - 3, sp.w - 5, 2);
         c.fillStyle = PAL.ember;
-        c.fillRect(TX[i] + sp.w - 3, ground - 3, 1, 1);
-        return;
+        c.fillRect(HX + sp.w - 3, ground - 3, 1, 1);
+      } else {
+        c.drawImage(view.flash && view.flash.t0 > t ? sp.fl : sp.cv, x, y);
+        bar(c, HX + 1, y - 4, sp.w - 2, hp / max, PAL.blood);
       }
-      c.drawImage(view.flash && view.flash["t" + i] > t ? sp.fl : sp.cv, x, y);
-      bar(c, TX[i] + 1, y - 4, sp.w - 2, hp / max, PAL.blood);
-    });
+    }
     if (s.dive && s.dive.event === "rescue") {
       const sp = teamSpr("wei");
       c.fillStyle = BANDS[1][2];
@@ -741,7 +736,7 @@
   }
   /* 战斗回放中各单位的屏幕位置，给飘字用。 */
   function slot(kind, i, n, eid) {
-    if (kind === "t") return { x: TX[i] + 3, y: FLOOR - 26 };
+    if (kind === "t") return { x: HX + 3, y: FLOOR - 26 };
     const p = place(eid, i);
     return { x: p.x + 4, y: p.y - 10 };
   }

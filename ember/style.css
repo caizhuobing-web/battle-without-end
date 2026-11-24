@@ -96,6 +96,13 @@ kbd { font: inherit; color: var(--frost); margin-left: 4px; }
 .bar.o2 i { background: var(--o2); }
 .bar.load i { background: var(--load); }
 .bar.hearth i { background: var(--hearth); }
+.bar.hp i { background: var(--blood); }
+.card.sel { border-color: var(--frost); }
+.item { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--rust); padding-top: 6px; }
+.item span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.item b { font-weight: normal; }
+.item small { color: var(--frost); }
+.item.on { border-top-color: var(--frost); }
 .hud { background: var(--iron); border: 2px solid var(--rust); box-shadow: inset 0 1px 0 var(--hi), 0 2px 0 var(--coal); padding: 4px 10px; display: flex; flex-direction: column; gap: 2px; }
 .hud .team { gap: 12px; }
 .nodes { display: flex; flex-direction: column; gap: 6px; }

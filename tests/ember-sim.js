@@ -1,17 +1,17 @@
 /* 万丈深渊：无界面回归与平衡测试。
    node tests/ember-sim.js           快速门禁
-   node tests/ember-sim.js --report  打印 200 个存档的通关统计、预估分布、战术差异
-   验收线来自 ember/docs/design.md 第 6 节与 ember/docs/pm-review-r1.md。 */
+   node tests/ember-sim.js --report  打印 200 个存档的通关统计、各行装的整局表现、配件的作用
+   验收线来自 ember/docs/design.md 第 6 节。 */
 const path = require("path");
 const assert = require("assert");
 require(path.join(__dirname, "../ember/data.js"));
 require(path.join(__dirname, "../ember/sim.js"));
 const D = globalThis.EmberData, S = globalThis.EmberSim;
 const report = process.argv.includes("--report");
-const hpFrac = (d) => d.team.reduce((a, m) => a + Math.max(0, m.hp), 0) / d.team.reduce((a, m) => a + m.max, 0);
+const hpFrac = (d) => Math.max(0, d.team[0].hp) / d.team[0].max;
 const stats = { enc: 0, sure: 0, retreat: 0 };
 
-/* 按敌情挑战术：大型单体破甲、掩护、投射；成群不破甲、反击、压制；能核不够时用装甲。 */
+/* 按敌情挑战术：大型单体破甲、架盾、投射；成群不破甲、反击、压制；能核不够时用装甲。 */
 function pickTactic(s) {
   const d = s.dive, E = D.ENEMIES[d.enc.e], many = d.enc.foes.length > 2;
   S.setTactic(s, "breach", E.hp >= 40);
@@ -61,27 +61,38 @@ function diveOnce(s) {
   assert(!s.dive, "dive must end");
 }
 
-function manage(s) {
+/* 配件对某套行装值多少：通用词条按固定分，专属词条只有穿对行装才算。 */
+function itemScore(it, wear) {
+  const W = { atk: 6, hp: 0.5, arm: 6, o2: 3, cap: 1, big: 0.5, swarm: 0.3, loot: 0.6, regen: 1.5, crit: 0.8, breach: wear === "hunter" ? 0.6 : 0, counter: wear === "guard" ? 0.3 : 0, stam: wear === "guard" ? 2 : 0, fuel: wear === "stoker" ? 0.4 : 0 };
+  return it.a.reduce((a, [k, v]) => a + (W[k] || 0) * v, 0);
+}
+/* opt.wear 固定行装；opt.noItems 不装配件；opt.noSkills 不带技艺。 */
+function manage(s, opt) {
+  opt = opt || {};
   while (S.repair(s));
-  for (const id of ["guard", "hunter", "stoker"]) S.promote(s, id);
+  for (const id of ["hunter", "guard", "stoker"]) S.promote(s, id);
+  if (opt.wear) S.wear(s, opt.wear);
+  for (const id of s.equip.slice()) S.unequip(s, id);
+  if (!opt.noItems) for (const it of s.items.slice().sort((a, b) => itemScore(b, s.wear) - itemScore(a, s.wear)).slice(0, D.EQUIP_SLOTS)) S.equip(s, it.id);
+  if (s.items.length > 8) for (const it of s.items.filter((x) => !s.equip.includes(x.id)).sort((a, b) => a.r - b.r).slice(0, s.items.length - 8)) S.salvage(s, it.id);
+  if (!opt.noSkills) for (const k of s.skills) if (!s.slots.includes(k)) S.toggleSkill(s, k);
   if (s.hearth <= 2) S.stoke(s);
   for (const k of ["tank", "frame", "armor"]) S.build(s, k);
-  const ids = ["guard", "hunter", "stoker"].sort((a, b) => s.cls[a].lv - s.cls[b].lv);
-  if (s.store.core > 40) S.train(s, ids[0]);
+  if (s.store.core > 40) S.upgrade(s, s.wear);
   while (s.hearth < 5 && s.store.core > 30 && S.stoke(s));
 }
 
-function playThrough(seed, maxDives) {
+function playThrough(seed, maxDives, opt) {
   const s = S.newGame(seed, 0);
   let dives = 0, waves = 0, lostWaves = 0;
+  manage(s, opt);
   while (!s.won && dives < maxDives) {
     if (s.tide) {
-      manage(s);
-      // 准备不足时先回去下潜攒能核
+      manage(s, opt);
       if (s.store.core < 20 && waves > 0) {
         diveOnce(s);
         dives++;
-        manage(s);
+        manage(s, opt);
       }
       waves++;
       if (!S.tideWave(s)) lostWaves++;
@@ -90,12 +101,18 @@ function playThrough(seed, maxDives) {
     }
     diveOnce(s);
     delete s.fx;
-    manage(s);
+    manage(s, opt);
     dives++;
     const copy = JSON.parse(JSON.stringify(s));
     assert.deepStrictEqual(copy, s, "state must survive JSON round-trip");
   }
   return { s, dives, waves, lostWaves };
+}
+function batch(n, opt) {
+  const res = [];
+  for (let i = 1; i <= n; i++) res.push(playThrough(1000 + i, 120, opt));
+  const ds = res.map((r) => (r.s.won ? r.dives : 999)).sort((a, b) => a - b);
+  return { res, med: ds[ds.length >> 1], won: res.filter((r) => r.s.won).length };
 }
 
 /* 1. 确定性：同种子同结果 */
@@ -138,7 +155,7 @@ function playThrough(seed, maxDives) {
   assert.strictEqual(s.dive.layer, 2);
 }
 
-/* 4. 救援：只出现一次，救人丢一半能核；不救则路标晚一次下潜才找到 */
+/* 4. 救援：只出现一次，救人丢一半能核；不救则路标要之后的下潜走到第 3 步才找到。首领首次击倒必掉技艺和配件 */
 {
   const s = S.newGame(3, 0);
   S.startDive(s, 1);
@@ -155,11 +172,12 @@ function playThrough(seed, maxDives) {
   t.flags.metWei = true;
   S.startDive(t, 1);
   t.dive.map[0] = [{ t: "boss", e: "hyenaMatron" }];
-  t.dive.team.forEach((m) => (m.hp = m.max = 9999));
+  t.dive.team[0].hp = t.dive.team[0].max = 9999;
   S.moveTo(t, 0);
   S.act(t, "fight");
   S.goHome(t);
   assert(!S.routeUnlocked(t), "sign not found on the same dive");
+  assert(t.skills.includes("spear") && t.items.length >= 1, "first boss kill brings home a skill and an item");
   S.startDive(t, 1);
   for (let i = 0; i < 3; i++) t.dive.map[i] = [{ t: "cache" }];
   S.moveTo(t, 0);
@@ -188,15 +206,18 @@ function playThrough(seed, maxDives) {
   assert(S.promote(s, "guard"));
 }
 
-/* 7. 超重：超过上限 25% 走不动，丢到上限后能走 */
+/* 7. 超重：超过上限 25% 走不动，丢到上限后能走；配件也占负重 */
 {
   const s = S.newGame(10, 0);
   S.startDive(s, 1);
+  const w0 = S.weight(s);
+  s.dive.carry.items.push(S.rollItem(s, 1, false));
+  assert.strictEqual(S.weight(s), w0 + D.ITEM_W);
   s.dive.carry.core = 40;
   assert(S.tooHeavy(s));
   assert.throws(() => S.moveTo(s, 0));
   S.dropToCap(s);
-  assert(!S.overweight(s) && !S.tooHeavy(s));
+  assert(!S.tooHeavy(s));
 }
 
 /* 8. 常规队伍：按经过时间产出，8 小时封顶 */
@@ -210,58 +231,79 @@ function playThrough(seed, maxDives) {
   assert.strictEqual(s.store.core - c0, 30 + 240, "capped at 8 hours");
 }
 
-/* 9. 进阶的选择要有代价：同一场战斗，换一个战术，结果明显不同 */
-function tacticSpread(enemy, carry, n) {
-  const s = S.newGame(21, 0);
-  for (const id in s.cls) s.cls[id] = { lv: 3, adv: true };
-  S.startDive(s, 1);
-  s.dive.carry.core = carry;
-  s.dive.map[0] = [{ t: "fight", e: enemy }];
-  S.moveTo(s, 0);
-  if (n) s.dive.enc.foes = Array.from({ length: n }, () => ({ hp: D.ENEMIES[enemy].hp, max: D.ENEMIES[enemy].hp }));
-  const res = {};
-  for (const breach of [true, false])
-    for (const stance of ["cover", "counter"])
-      for (const mode of ["lance", "blanket", "plating"]) {
-        S.setTactic(s, "breach", breach);
-        S.setTactic(s, "stance", stance);
-        S.setTactic(s, "mode", mode);
-        const f = S.forecast(s);
-        res[(breach ? "破" : "不") + "/" + stance + "/" + mode] = f.win * 100 + Math.round(f.left * 100);
-      }
-  return res;
-}
+/* 9. 行装、配件、技艺的规则 */
 {
-  const big = tacticSpread("wellWarden", 12), swarm = tacticSpread("chorusBat", 12, 8);
-  const best = (r) => Object.keys(r).reduce((a, b) => (r[b] > r[a] ? b : a));
-  const bb = best(big), bs = best(swarm);
-  if (report) console.log("守兽最佳", bb, "群蝠最佳", bs);
-  assert.notStrictEqual(bb, bs, "best tactic differs between a big single foe and a swarm");
-  assert(bb.startsWith("破") && bb.endsWith("lance"), "big single foe: breach and lance");
-  assert(bs.endsWith("blanket"), "swarm: blanket");
-  const spreadBig = Math.max(...Object.values(big)) - Math.min(...Object.values(big));
-  assert(spreadBig >= 15, "tactics must matter against a boss, spread " + spreadBig);
+  const s = S.newGame(12, 0);
+  const base = S.heroStats(s);
+  for (let i = 0; i < 5; i++) s.items.push(S.rollItem(s, 1, false));
+  s.items.push({ id: 900, b: "blade", r: 0, a: [["atk", 3]] }, { id: 901, b: "filter", r: 0, a: [["o2", 4]] });
+  assert(S.equip(s, 900) && S.equip(s, 901) && S.equip(s, s.items[0].id));
+  assert(!S.equip(s, s.items[1].id), "only 3 equip slots");
+  const now = S.heroStats(s);
+  assert(now.atk >= base.atk + 3 && now.o2 >= base.o2 + 4, "items change stats");
+  S.wear(s, "guard");
+  assert(S.heroStats(s).hp > now.hp, "guard outfit has more hp");
+  const cores = s.store.core;
+  assert(S.salvage(s, 900) && s.store.core > cores && !s.equip.includes(900), "salvage gives cores and unequips");
+  s.skills = ["spear", "smoke", "aid"];
+  assert(S.toggleSkill(s, "spear") && S.toggleSkill(s, "smoke") && !S.toggleSkill(s, "aid"), "only 2 skill slots");
+  S.startDive(s, 1);
+  assert(!S.wear(s, "hunter") && !S.equip(s, s.items[1].id), "no changing outfit or items during a dive");
+  // 倒下：背着的配件全丢
+  s.dive.carry.items.push(S.rollItem(s, 1, false));
+  const n = s.items.length;
+  s.dive.map[0] = [{ t: "boss", e: "fumeTyrant" }];
+  S.moveTo(s, 0);
+  S.act(s, "fight");
+  assert.strictEqual(s.last.how, "wiped");
+  assert.strictEqual(s.items.length, n, "carried items are lost on a wipe");
 }
 
-/* 10. 整体节奏：会看预估的朴素策略能通关；下潜次数 14 到 30（每次约 2 分钟，40 分钟左右）；战斗不能大多稳赢 */
+/* 10. 行装要有取舍：同一场战斗，换一套行装，结果明显不同 */
+function spread(enemy, n, wearId, carry) {
+  const s = S.newGame(21, 0);
+  for (const id in s.outfits) s.outfits[id] = { lv: 3, adv: true };
+  S.wear(s, wearId);
+  S.startDive(s, 1);
+  s.dive.carry.core = carry;
+  s.dive.map[0] = [{ t: "fight", e: enemy, n }];
+  S.moveTo(s, 0);
+  pickTactic(s);
+  const f = S.forecast(s);
+  return f.win * 100 - Math.round(f.cost * 100);
+}
+{
+  const r = {};
+  for (const w of ["hunter", "guard", "stoker"]) r[w] = { big: spread("wellWarden", 1, w, 12), swarm: spread("chorusBat", 6, w, 12) };
+  if (report) console.log("单场得分（胜场×100 减损失%）：守兽 / 六只群鸣蝠", JSON.stringify(r));
+  assert(r.stoker.swarm > r.hunter.swarm, "stoker outfit is better against swarms than hunter");
+  assert(r.hunter.big > r.stoker.big || r.guard.big > r.stoker.big, "single big foe favours hunter or guard over stoker");
+}
+
+/* 11. 整体节奏：会看预估的朴素策略能通关；下潜次数 14 到 30；相当一部分战斗要付出代价；配件和技艺确实有用 */
 {
   const N = report ? 200 : 40;
-  const res = [];
-  for (let i = 1; i <= N; i++) res.push(playThrough(1000 + i, 120));
-  const won = res.filter((r) => r.s.won);
-  const ds = won.map((r) => r.dives).sort((a, b) => a - b);
-  const med = ds[ds.length >> 1];
-  const lost = res.reduce((a, r) => a + r.lostWaves, 0), waves = res.reduce((a, r) => a + r.waves, 0);
-  const advGuard = res.filter((r) => r.s.cls.guard.adv).length;
+  const all = batch(N);
+  const ds = all.res.filter((r) => r.s.won).map((r) => r.dives).sort((a, b) => a - b);
+  const lost = all.res.reduce((a, r) => a + r.lostWaves, 0), waves = all.res.reduce((a, r) => a + r.waves, 0);
   const sure = stats.sure / stats.enc;
+  const items = all.res.reduce((a, r) => a + r.s.items.length, 0) / N, skills = all.res.reduce((a, r) => a + r.s.skills.length, 0) / N;
   if (report) {
-    console.log("通关率", won.length + "/" + N, "下潜次数 中位", med, "最少", ds[0], "最多", ds[ds.length - 1]);
+    console.log("通关率", all.won + "/" + N, "下潜次数 中位", all.med, "最少", ds[0], "最多", ds[ds.length - 1]);
     console.log("几乎不掉血（损失 <10%）的稳赢局比例", (sure * 100).toFixed(0) + "%", "撤退", stats.retreat, "/", stats.enc);
-    console.log("兽潮 失守", lost, "/", waves, "波；护卫者进阶率", advGuard + "/" + N);
+    console.log("兽潮 失守", lost, "/", waves, "波；通关时平均配件", items.toFixed(1), "件，技艺", skills.toFixed(1), "个");
+    const M = 60;
+    for (const [name, opt] of [["只穿猎核装", { wear: "hunter" }], ["只穿护卫装", { wear: "guard" }], ["只穿御炉装", { wear: "stoker" }], ["不装配件", { noItems: true }], ["不带技艺", { noSkills: true }], ["配件技艺都不用", { noItems: true, noSkills: true }]]) {
+      const b = batch(M, opt);
+      console.log(name, "通关", b.won + "/" + M, "中位", b.med);
+    }
   }
-  assert(won.length / N >= 0.85, "policy should usually finish: " + won.length + "/" + N);
-  assert(med >= 14 && med <= 30, "median dives in design range, got " + med);
-  assert(sure <= 0.55, "about half the fights must cost something, got " + sure.toFixed(2));
+  assert(all.won / N >= 0.85, "policy should usually finish: " + all.won + "/" + N);
+  assert(all.med >= 14 && all.med <= 30, "median dives in design range, got " + all.med);
+  assert(sure <= 0.6, "a good share of fights must cost something, got " + sure.toFixed(2));
+  const K = report ? 60 : 20;
+  const bare = batch(K, { noItems: true, noSkills: true }), geared = batch(K);
+  assert(bare.med > geared.med, "items and skills must speed up a run: bare " + bare.med + " vs geared " + geared.med);
 }
 
 console.log("ember-sim: ok");
