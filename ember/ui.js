@@ -36,6 +36,7 @@
       s.tactic.breach = raw.tactic.breach !== false;
     }
     s.dives = Math.floor(num(raw.dives, 0, 1e6, 0));
+    s.signAt = Math.floor(num(raw.signAt, 0, 1e6, 0));
     s.idleBank = num(raw.idleBank, 0, 1, 0);
     if (raw.tide && typeof raw.tide === "object") s.tide = { wave: Math.floor(num(raw.tide.wave, 0, S.TIDE.length - 1, 0)) };
     if (s.route >= D.ROUTE.length && !s.tide && !raw.won) s.tide = { wave: 0 };
@@ -109,6 +110,17 @@
   const cv = $("cv"), cx = cv.getContext("2d");
   cv.width = P.W;
   cv.height = P.H;
+  /* 画布整倍放大：宽高都按 144×96 的整数倍取，放不下 2 倍时才用小数倍。 */
+  function fit() {
+    const land = window.matchMedia("(min-aspect-ratio: 4/3) and (min-width: 640px)").matches;
+    const aw = $("stage").clientWidth, ah = land ? window.innerHeight - 60 : window.innerHeight * 0.42;
+    let k = Math.min(aw / P.W, ah / P.H);
+    if (k >= 2) k = Math.floor(k);
+    cv.style.width = Math.floor(P.W * k) + "px";
+    cv.style.height = Math.floor(P.H * k) + "px";
+  }
+  window.addEventListener("resize", fit);
+  fit();
   let lastT = 0;
   function frame(ms) {
     const t = ms / 1000, dt = Math.min(0.1, t - lastT || 0);
@@ -225,6 +237,14 @@
     home() {
       S.goHome(st);
     },
+    descend() {
+      S.descend(st);
+      view.walk = 0.6;
+      A.play("step");
+    },
+    drop() {
+      S.dropToCap(st);
+    },
     rescue(v) {
       S.rescue(st, v === "1");
       A.play(v === "1" ? "ok" : "warn");
@@ -254,7 +274,7 @@
     repair() {
       if (S.repair(st)) {
         A.play("core");
-        if (st.route === 1) story("route1");
+        if (st.route === 1) story(st.flags.wei ? "route1" : "route1b");
         if (st.route === 2) story("route2");
         if (st.tide) story("tide");
       }
@@ -369,12 +389,13 @@
     wei: ["苇", "苇是从路的另一头走过来的。她说旧补给线没有断，只是没人维护。", "修好它，常规队伍就能沿线来回，不用每次都靠你们。补给线在聚落的「补给线」页。"],
     weiSign: ["路标", "据点后面的岩壁上刻着新鲜的路标，指向更深处。有人走过这条路，还做了记号。", "照着路标，可以开始修复补给线。补给线在聚落的「补给线」页。"],
     route1: ["石灯", "第一段补给线修好了。常规队伍开始沿线往返，就算你不在，也会带回能核。", "苇说，路的另一端是她的聚落，叫石灯。那边也在等这条路。", "现在可以直接从回声井出发。"],
+    route1b: ["石灯", "第一段补给线修好了。常规队伍开始沿线往返，就算你不在，也会带回能核。", "路标的尽头刻着两个字：石灯。路的另一端还有人。", "现在可以直接从回声井出发。"],
     route2: ["第二段", "第二段修好了。回声井的峭壁上挂起了新绳。", "现在可以直接从沸雾窟出发。"],
     relic: ["古件", "雾窟巨兽的巢里有一盏旧灯。不亮，但每隔一会儿就发出一次脉冲，很规律。", "没人认得它。先带回去放着。"],
     tide: ["兽潮", "第三段修通的那天夜里，路的深处传来很多脚步声。", "兽群沿着新修的路涌上来了。守住三波，这条路才算真正属于灰炉屯。", "失守一波炉温 -3。可以先回去准备，再来迎击。"],
-    adv_hunter: ["定向破甲", "猎核者学会了从层甲骨的纹路里找破绽。", "战斗中开启破甲：猎核者第一击只破甲不造成伤害，之后全队对该敌伤害 +30%，击杀必得完整能核。敌人多而弱时不划算。"],
-    adv_guard: ["姿态切换", "韧骨板让护卫者能在两种站法之间切换。", "展开掩护：替全队承受伤害，每挡一次耐力 -2，耐力耗尽自动解除。机动反击：自身伤害 ×2.2，被打时反击，但不再替队友挡。"],
-    adv_stoker: ["模式切换", "导热丝让御炉者能把炉罐接到不同的输出上。", "投射：单体高伤。压制：打全部敌人。装甲：全队护甲 +3，且不烧能核。三种不能同时满输出。"],
+    adv_hunter: ["定向破甲", "猎核者学会了从层甲骨的纹路里找破绽。", "开启破甲时，猎核者前 2 轮只研究最强的敌人，不造成伤害。之后全队对它伤害 +60%。生命 40 以上的大型敌人被破甲后击杀，取到完整能核 +4。", "对付成群的小敌人，2 轮空档不划算。"],
+    adv_guard: ["姿态切换", "韧骨板让护卫者能在两种站法之间切换。", "展开掩护：替全队挡下攻击，承伤减半，每挡一次耐力 -1，耐力耗尽自动转为机动反击。", "机动反击：自身伤害 ×2.4，被打时反击，但不替队友挡。敌人越多，掩护的耐力掉得越快。"],
+    adv_stoker: ["模式切换", "导热丝让御炉者能把炉罐接到不同的输出上。", "投射打单个最强的敌人，压制打全部敌人。两者每轮烧 1 个随身能核，散热到上限要停火一轮。", "装甲：全队护甲 +4，不烧能核，御炉者自己几乎不出伤害。"],
   };
   function story(k) {
     if (st.flags["seen_" + k]) return;
@@ -391,9 +412,14 @@
     const mats = Object.keys(L.mats).filter((k) => L.mats[k] > 0).map((k) => D.MATS[k].name + " " + L.mats[k]).join("，");
     const head = L.how === "wiped" ? "小队倒下了" : "全员归返";
     const body = L.how === "wiped" ? "背着的东西都丢在了" + D.LAYERS[L.layer - 1].name + "。炉温 -2。" : "带回能核 " + L.core + (mats ? "，" + mats : "") + "。炉温 -1。";
-    show("<h3>" + head + "</h3><p>" + body + '</p><div class="btns"><button class="btn main" data-act="close">回到灰炉屯</button></div>');
+    const loss = [L.lost ? "回程氧气不够，丢下能核 " + L.lost : "", L.dropped ? "太重丢下能核 " + L.dropped : "", L.burned ? "御炉者烧掉能核 " + L.burned : ""].filter(Boolean).join("，");
+    show("<h3>" + head + "</h3><p>" + body + "</p>" + (loss ? '<p class="lack">' + loss + "。</p>" : "") + '<div class="btns"><button class="btn main" data-act="close">回到灰炉屯</button></div>');
     if (st.flags.wei) story("wei");
     else if (st.flags.weiSign) story("weiSign");
+    else if (st.signAt && !st.flags.seen_signHint) {
+      st.flags.seen_signHint = true;
+      show('<h3>没有路标</h3><p>据点清掉了，但不知道旧补给线往哪里走。下次下潜再仔细找找。</p><div class="btns"><button class="btn main" data-act="close">继续</button></div>');
+    }
     if (st.flags.relic) story("relic");
   }
   let toastT = 0;
@@ -426,7 +452,7 @@
       '<span title="能核">' + ic("core") + st.store.core + "</span>" +
       '<span title="炉温">' + ic("fire") + st.hearth + "/" + D.HEARTH.max + "</span>" +
       (rate ? '<span class="dim" title="常规队伍每分钟带回的能核">常规队伍 +' + rate + "/分</span>" : "");
-    $("bSnd").textContent = opt.snd ? "有声" : "静音";
+    $("bSnd").textContent = opt.snd ? "关闭声音" : "打开声音";
   }
   function render() {
     top();
@@ -437,12 +463,11 @@
     if (st.dive && st.dive.event === "rescue" && $("modal").hidden) rescueModal();
   }
   function fightPanel() {
-    const fx = view.fight.fx, E = D.ENEMIES[fx.e];
-    return '<div class="card"><h3>' + (fx.tide ? "兽潮 第 " + fx.tide + " 波 · " : "") + "交战 · " + E.name + '</h3><p class="dim">' + teamLine() + '</p><div class="btns"><button class="btn" data-act="skip">跳过回放</button></div></div>' + logBox();
-  }
-  function teamLine() {
-    if (!st.dive) return "";
-    return st.dive.team.map((m) => D.CLASSES[m.id].name + " " + Math.max(0, Math.round(m.hp)) + "/" + m.max).join("　");
+    const f = view.fight, fx = f.fx, E = D.ENEMIES[fx.e];
+    const fr = fx.frames[Math.min(f.i, fx.frames.length - 1)];
+    const team = ["hunter", "guard", "stoker"].map((id, i) => '<span class="c-' + id + '">' + D.CLASSES[id].name + " " + fr.t[i] + "/" + fx.max[i] + "</span>").join("");
+    const foes = fr.f.filter((h) => h > 0).length;
+    return '<div class="card"><h3>' + (fx.tide ? "兽潮第 " + fx.tide + " 波 · " : "") + "交战 · " + E.name + '</h3><div class="row team">' + team + '</div><p class="dim">第 ' + f.i + " 轮，剩余敌人 " + foes + '</p><div class="btns"><button class="btn" data-act="skip">直接看结果 <kbd>空格</kbd></button></div></div>';
   }
   function hudBlock() {
     const d = st.dive, rc = S.returnCost(st), w = S.weight(st), cap = S.capacity(st);
@@ -450,13 +475,17 @@
     return (
       '<div class="hud">' +
       '<div class="row">' + ic("o2") + '<span class="lbl">氧气 ' + d.o2 + "/" + d.o2Max + "</span>" + barH("o2", d.o2, d.o2Max, rc) + '<span class="lbl ' + (d.o2 < rc ? "lack" : "dim") + '">回程 ' + rc + "</span></div>" +
-      '<div class="row">' + ic("load") + '<span class="lbl ' + (w > cap ? "lack" : "") + '">负重 ' + fmt(w) + "/" + cap + "</span>" + barH("load", w, cap) + '<span class="lbl ' + (w > cap ? "lack" : "dim") + '">' + (w > cap ? "超重" : "") + "</span></div>" +
+      '<div class="row">' + ic("load") + '<span class="lbl ' + (w > cap ? "lack" : "") + '">负重 ' + fmt(w) + "/" + cap + "</span>" + barH("load", w, cap * 1.25, cap) + '<span class="lbl ' + (w > cap ? "lack" : "dim") + '">' + (S.tooHeavy(st) ? "走不动" : w > cap ? "超重" : "") + "</span></div>" +
       '<div class="row">' + ic("core") + '<span class="lbl">背着能核 ' + d.carry.core + "</span>" + (mats ? '<span class="lbl dim">' + mats + "</span>" : "") + "</div>" +
       '<div class="row team">' + d.team.map((m) => '<span class="c-' + m.id + '">' + D.CLASSES[m.id].name + " " + Math.max(0, Math.round(m.hp)) + "/" + m.max + "</span>").join("") + "</div>" +
       "</div>"
     );
   }
   const fmt = (x) => (Math.round(x * 10) / 10).toString();
+  function homeLabel(verb) {
+    const rc = S.returnCost(st), loss = S.homeLoss(st);
+    return verb + "（回程氧气 " + rc + "，当前 " + st.dive.o2 + (loss ? "，会丢下约 " + loss + " 个能核" : "") + "）";
+  }
   function nodeText(n, L) {
     if (n.t === "fight") {
       const E = D.ENEMIES[n.e];
@@ -469,7 +498,7 @@
     if (n.t === "cache") return ["补给", "能核 +2 到 4", "cache"];
     return ["未知", "可能有余气，也可能塌方", "unknown"];
   }
-  const TRAIT = { ambush: "伏击：靠近时先手一击", track: "成群追踪：绕行有一半机会甩不掉", mimic: "伪装：靠近才现形，现形后封路", "": "成群：数量多，单个弱。御炉者的压制最有效" };
+  const TRAIT = { ambush: "伏击：靠近时先手一击，冰封时不会", track: "成群追踪：绕行有一半机会甩不掉", mimic: "伪装：靠近才现形，现形后封路", "": "成群：数量多，单个弱" };
   function divePanel() {
     const d = st.dive, L = D.LAYERS[d.layer - 1];
     let h = hudBlock();
@@ -477,46 +506,51 @@
     if (d.enc) return h + encPanel() + logBox();
     const rc = S.returnCost(st);
     if (d.atEnd) {
-      return h + '<div class="card"><h3>' + L.name + '据点已清</h3><p>再往下没有路标了。带着收获回去吧。</p><div class="btns"><button class="btn main" data-act="home">归返（回程氧气 ' + rc + "）</button></div></div>" + logBox();
+      if (S.canDescend(st)) {
+        const NL = D.LAYERS[d.layer];
+        const after = rc + (D.LAYERS[d.layer - 1].o2Step * D.LAYERS[d.layer - 1].steps - D.LAYERS[d.layer - 1].o2Step * d.step) + NL.o2Step;
+        return h + '<div class="card"><h3>' + L.name + "据点已清</h3><p>往下是" + NL.name + "。下去以后，回程至少要氧气 " + Math.max(after, rc + NL.o2Step) + '。</p><div class="btns col"><button class="btn main" data-act="descend"' + (S.tooHeavy(st) ? " disabled" : "") + ">下到" + NL.name + '</button><button class="btn" data-act="home">' + homeLabel("归返") + "</button></div></div>" + logBox();
+      }
+      return h + '<div class="card"><h3>' + L.name + '据点已清</h3><p>再往下没有路标了。带着收获回去吧。</p><div class="btns"><button class="btn main" data-act="home">' + homeLabel("归返") + "</button></div></div>" + logBox();
     }
     const opts = S.options(st);
     const sc = S.stepCost(st, d.layer);
-    h += '<div class="card"><h3>' + L.name + " · 第 " + (d.step + 1) + "/" + d.map.length + ' 步</h3><p class="dim">每走一步氧气 -' + sc + (L.special === "fog" ? "（雾中 +1）" : "") + (S.overweight(st) ? "（超重 +1）" : "") + (L.special === "cliff" && S.overweight(st) ? "，超重时可能在峭壁上滑落" : "") + '</p><div class="nodes">';
+    const heavy = S.tooHeavy(st);
+    h += '<div class="card"><h3>' + L.name + " · 第 " + (d.step + 1) + "/" + d.map.length + ' 步</h3><p class="dim">每走一步氧气 -' + sc + (L.special === "fog" ? "（雾中 +1）" : "") + (S.overweight(st) ? "（超重 +1）" : "") + (L.special === "cliff" && S.overweight(st) ? "，超重时可能在峭壁上滑落" : "") + "</p>" + (heavy ? '<p class="lack">背得太重，走不动了。丢下一些能核，或者归返。</p>' : "") + '<div class="nodes">';
     opts.forEach((n, i) => {
       const [name, desc, icon] = nodeText(n, L);
       const tight = d.o2 - sc < rc + (n.t === "crate" ? 1 : 0) - (n.t === "spring" ? 6 : 0);
-      h += '<button class="node" data-act="node" data-v="' + i + '">' + ic(icon) + '<span><b>' + esc(name) + "</b><small>" + esc(desc) + "</small>" + (tight ? '<small class="lack">走这一步后，回程氧气不够</small>' : "") + '</span><kbd>' + (i + 1) + "</kbd></button>";
+      h += '<button class="node" data-act="node" data-v="' + i + '"' + (heavy ? " disabled" : "") + ">" + ic(icon) + '<span><b>' + esc(name) + "</b><small>" + esc(desc) + "</small>" + (tight ? '<small class="lack">走这一步后，回程氧气不够</small>' : "") + '</span><kbd>' + (i + 1) + "</kbd></button>";
     });
-    h += '</div><div class="btns"><button class="btn" data-act="home">归返（回程氧气 ' + rc + "）</button></div></div>";
+    h += '</div><div class="btns col">' + (S.overweight(st) ? '<button class="btn" data-act="drop">丢下能核，回到负重上限</button>' : "") + '<button class="btn" data-act="home">' + homeLabel("归返") + "</button></div></div>";
     return h + logBox();
   }
   function tactics() {
     let h = "";
     const t = st.dive ? st.dive : st.tactic;
-    if (st.cls.hunter.adv) h += tacRow("猎核者 · 破甲", [["breach:1", "开", t.breach], ["breach:0", "关", !t.breach]]);
-    if (st.cls.guard.adv) h += tacRow("护卫者 · 姿态", [["stance:cover", "展开掩护", t.stance === "cover"], ["stance:counter", "机动反击", t.stance === "counter"]]);
-    if (st.cls.stoker.adv) h += tacRow("御炉者 · 模式", [["mode:lance", "投射", t.mode === "lance"], ["mode:blanket", "压制", t.mode === "blanket"], ["mode:plating", "装甲", t.mode === "plating"]]);
+    if (st.cls.hunter.adv) h += tacRow("猎核者 · 破甲", [["breach:1", "开", t.breach], ["breach:0", "关", !t.breach]], t.breach ? "前 2 轮不攻击；之后全队对最强的敌人伤害 +60%" : "直接攻击");
+    if (st.cls.guard.adv) h += tacRow("护卫者 · 姿态", [["stance:cover", "展开掩护", t.stance === "cover"], ["stance:counter", "机动反击", t.stance === "counter"]], t.stance === "cover" ? "替全队挡下攻击，承伤减半；耐力耗尽转反击" : "自身伤害 ×2.4，被打时反击");
+    if (st.cls.stoker.adv) h += tacRow("御炉者 · 模式", [["mode:lance", "投射", t.mode === "lance"], ["mode:blanket", "压制", t.mode === "blanket"], ["mode:plating", "装甲", t.mode === "plating"]], t.mode === "plating" ? "全队护甲 +4，不烧能核" : (t.mode === "lance" ? "单体伤害高" : "打全部敌人") + "，每轮烧 1 个随身能核");
     return h ? '<div class="tac">' + h + "</div>" : "";
   }
-  function tacRow(label, items) {
-    return '<div class="row"><span class="lbl">' + label + '</span><span class="seg">' + items.map(([v, t, on]) => '<button class="chip' + (on ? " on" : "") + '" data-act="tac" data-v="' + v + '">' + t + "</button>").join("") + "</span></div>";
+  function tacRow(label, items, note) {
+    return '<div class="row"><span class="lbl">' + label + '</span><span class="seg">' + items.map(([v, t, on]) => '<button class="chip' + (on ? " on" : "") + '" data-act="tac" data-v="' + v + '">' + t + "</button>").join("") + '</span></div><small class="dim">' + note + "</small>";
   }
   function encPanel() {
     const d = st.dive, E = D.ENEMIES[d.enc.e];
     const fc = S.forecast(st);
-    const rc = S.returnCost(st);
     const canD = S.canDetour(st);
     const dCost = 1 + (d.enc.frozen ? 1 : 0);
-    const word = fc.win === fc.n ? (fc.left > 0.5 ? "稳" : "能赢，伤得不轻") : fc.win === 0 ? "打不过" : "有风险";
-    const why = d.enc.boss ? "据点首领不能绕行" : d.enc.hidden ? "拟岩虫封住了路，不能绕行" : "";
-    let h = '<div class="card enc"><h3>' + esc(E.name) + (d.enc.foes.length > 1 ? " ×" + d.enc.foes.length : "") + "</h3>";
-    h += '<p class="dim">' + esc(d.enc.boss ? "据点首领：清掉它才能修复这一段补给线" : TRAIT[E.trait] || "敌情") + "</p>";
-    h += '<p>预估：' + word + "（" + fc.n + " 次推演胜 " + fc.win + " 次" + (fc.win ? "，剩余生命约 " + Math.round(fc.left * 10) * 10 + "%" : "") + "）</p>";
-    h += tactics();
+    const word = fc.win === 0 ? "打不过" : fc.win < fc.n ? "有可能全队倒下" : fc.cost >= 0.3 ? "能赢，伤得重" : fc.cost >= 0.1 ? "能赢，会掉血" : "稳";
+    const why = d.enc.boss ? "据点首领不能绕行。" : d.enc.hidden ? "拟岩虫封住了路，不能绕行。" : "";
+    let h = '<div class="card enc"><h3>' + esc(E.name) + (d.enc.foes.length > 1 ? " ×" + d.enc.foes.length : "") + '</h3><p class="dim">' + esc(d.enc.boss ? "据点首领：清掉它才能修复这一段补给线" : TRAIT[E.trait]) + "</p>";
     h += '<div class="btns col"><button class="btn main" data-act="fight">战斗 <kbd>F</kbd></button>';
-    h += '<button class="btn" data-act="detour"' + (canD ? "" : " disabled") + ">绕行（氧气 -" + dCost + (E.trait === "track" ? "，可能甩不掉" : "") + ") <kbd>D</kbd></button>" + (why ? '<small class="dim">' + why + "</small>" : "");
-    h += '<button class="btn" data-act="retreat">撤退并归返（回程氧气 ' + rc + "，当前 " + d.o2 + "） <kbd>R</kbd></button></div></div>";
-    return h;
+    h += '<button class="btn" data-act="detour"' + (canD ? "" : " disabled") + ">绕行（氧气 -" + dCost + (E.trait === "track" ? "，可能甩不掉" : "") + "） <kbd>D</kbd></button>";
+    h += '<button class="btn" data-act="retreat">' + homeLabel("撤退并归返") + " <kbd>R</kbd></button></div>";
+    if (why) h += '<p class="dim">' + why + "</p>";
+    h += "<p>预估：" + word + "。" + fc.n + " 次推演胜 " + fc.win + " 次" + (fc.win ? "，预计损失生命约 " + Math.round(fc.cost * 100) + "%" : "") + "。</p>";
+    h += tactics();
+    return h + "</div>";
   }
   function logBox() {
     const lines = st.log.slice(-6).reverse();
@@ -557,7 +591,7 @@
   function hearthTab() {
     return (
       '<div class="card"><h3>炉火 · 炉温 ' + st.hearth + "/" + D.HEARTH.max + "</h3>" + barH("hearth", st.hearth, D.HEARTH.max) +
-      '<p class="dim">每次下潜炉温 -1，小队倒下再 -1。炉温低于 3 时训练场停工；炉火熄灭时出发生命 -30%；兽潮时炉温是防线。</p>' +
+      '<p class="dim">每次下潜炉温 -1，小队倒下再 -1。炉温低于 3 时训练场停工；炉火熄灭时出发生命 -30%。兽潮时炉温每 2 格给守城的小队护甲 +1。</p>' +
       '<div class="btns"><button class="btn main" data-act="stoke"' + (st.hearth >= D.HEARTH.max || st.store.core < D.HEARTH.fuelCost ? " disabled" : "") + ">续燃（能核 -" + D.HEARTH.fuelCost + "，炉温 +1）</button></div></div>" +
       '<div class="card"><h4>库房</h4><p>能核 ' + st.store.core + "</p>" + matsLine() + "</div>"
     );
@@ -571,8 +605,8 @@
     let h = '<div class="card"><h3>工坊</h3><p class="dim">装备越好越重。负重上限由背架决定，超重时每步氧气多 -1。</p></div>';
     for (const k of ["tank", "armor", "frame"]) {
       const G0 = D.GEAR[k], lv = st.gear[k], cur = G0.levels[lv], nx = G0.levels[lv + 1];
-      h += '<div class="card"><h4>' + G0.name + " · " + ["旧", "新", "精制"][lv] + '</h4><p>' + GEARFX[k](cur) + "</p>";
-      if (nx) h += '<p class="dim">下一级：' + GEARFX[k](nx) + "</p><p>" + cost(nx.cost) + '</p><div class="btns"><button class="btn" data-act="build" data-v="' + k + '"' + (S.has(st, nx.cost) ? "" : " disabled") + ">打造</button></div>";
+      h += '<div class="card"><h4>' + ["旧", "新", "精制"][lv] + G0.name + "</h4><p>" + GEARFX[k](cur) + "</p>";
+      if (nx) h += '<p class="dim">' + ["旧", "新", "精制"][lv + 1] + G0.name + "：" + GEARFX[k](nx) + "</p><p>" + cost(nx.cost) + '</p><div class="btns"><button class="btn" data-act="build" data-v="' + k + '"' + (S.has(st, nx.cost) ? "" : " disabled") + ">打造" + ["旧", "新", "精制"][lv + 1] + G0.name + "</button></div>";
       else h += '<p class="dim">已是最好的一级。</p>';
       h += "</div>";
     }
@@ -589,9 +623,9 @@
     return h;
   }
   const CLSDESC = {
-    hunter: "集中攻击最强的敌人。敌人多于两个时伤害降低。进阶后可破甲：取到完整能核。",
-    guard: "替后排承伤，生命和护甲最高。进阶后可在展开掩护和机动反击之间切换。",
-    stoker: "烧随身的能核打全体，每三轮烧 1 个。没有能核时威力很低。进阶后可选投射、压制、装甲。",
+    hunter: "集中攻击最强的敌人。敌人多于两个时伤害降低。进阶后可破甲，对大型敌人取到完整能核。",
+    guard: "常替后排挨打，生命和护甲最高。进阶后可在展开掩护和机动反击之间切换。",
+    stoker: "烧随身的能核打全部敌人，每两轮烧 1 个。没有能核时威力很低。进阶后可选投射、压制、装甲。",
   };
   function routeTab() {
     let h = '<div class="card"><h3>补给线</h3><p class="dim">修好的路段有常规队伍往返：持续带回能核，沿途回程不耗氧，下次可以从下一层出发。</p>' + (S.routeUnlocked(st) ? "" : '<p class="lack">还不知道旧路怎么走。先去霜根廊深处找找线索。</p>') + "</div>";

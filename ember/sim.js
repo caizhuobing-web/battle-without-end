@@ -26,6 +26,7 @@
       flags: {},
       tactic: { stance: "cover", mode: "blanket", breach: true }, // 进阶后的战前选择，跨下潜保留
       dives: 0,
+      signAt: 0,
       idleAt: now || 0,
       idleBank: 0,
       dive: null,
@@ -57,18 +58,31 @@
     return w;
   }
   const overweight = (s) => weight(s) > capacity(s);
+  /* 超过上限 25% 就走不动了，只能丢东西或归返。 */
+  const tooHeavy = (s) => weight(s) > capacity(s) * 1.25;
+  function dropToCap(s) {
+    const d = s.dive;
+    const over = weight(s) - capacity(s);
+    if (over <= 0) return 0;
+    const n = Math.min(d.carry.core, Math.ceil(over / D.CORE_W));
+    d.carry.core -= n;
+    d.dropped = (d.dropped || 0) + n;
+    say(s, "丢下 " + n + " 个能核，回到负重上限。");
+    return n;
+  }
 
   function stepCost(s, layer) {
     const L = D.LAYERS[layer - 1];
     return L.o2Step + (overweight(s) ? 1 : 0) + (L.special === "fog" ? 1 : 0);
   }
-  /* 回程氧气：从当前层往上，每层按一个节点的量；当前层按已走的步数。
+  /* 回程氧气：当前层按已走的步数，上面每个未修复的层按整层的步数。越深越贵。
      已修复的补给线路段沿途有补给点，回程不耗氧。回声井锚点修好后该层减半。 */
   function returnCost(s) {
     if (!s.dive) return 0;
     let n = 0;
     for (let l = s.route + 1; l <= s.dive.layer; l++) {
-      let c = D.LAYERS[l - 1].o2Step * (l === s.dive.layer ? Math.max(1, s.dive.step) : 1);
+      const L = D.LAYERS[l - 1];
+      let c = L.o2Step * (l === s.dive.layer ? Math.max(1, s.dive.step) : L.steps);
       if (l === 2 && s.dive.anchor) c = Math.ceil(c / 2);
       n += c;
     }
@@ -79,7 +93,7 @@
   function member(s, id) {
     const C = D.CLASSES[id], lv = s.cls[id].lv;
     const hp = Math.round(C.hp * (1 + 0.15 * (lv - 1)));
-    return { id, hp, max: hp, atk: C.atk * (1 + 0.12 * (lv - 1)), arm: C.arm + D.GEAR.armor.levels[s.gear.armor].arm, stam: 30 };
+    return { id, hp, max: hp, atk: C.atk * (1 + 0.12 * (lv - 1)), arm: C.arm + D.GEAR.armor.levels[s.gear.armor].arm };
   }
 
   /* ---------- 路线图 ---------- */
@@ -96,10 +110,13 @@
       for (let j = 0; j < n; j++) {
         const r = rnd(s);
         let node;
-        if (r < 0.55) node = { t: "fight", e: pick(s, L.enemies) };
-        else if (r < 0.75) node = { t: L.special === "frozen" ? "crate" : L.special === "cliff" ? "anchor" : "spring" };
+        const spec = L.special === "frozen" ? "crate" : L.special === "cliff" ? "anchor" : "spring";
+        if (r < 0.6) node = { t: "fight", e: pick(s, L.enemies) };
+        else if (r < (spec === "spring" ? 0.7 : 0.78)) node = { t: spec };
         else if (r < 0.9) node = { t: "cache" };
         else node = { t: "unknown" };
+        // 每层只有一处锚点
+        if (node.t === "anchor" && (map.some((rw) => rw.some((x) => x.t === "anchor")) || row.some((x) => x.t === "anchor"))) node = { t: "cache" };
         if (L.special === "frozen" && node.t === "fight" && rnd(s) < 0.4) node.frozen = true;
         if (node.e === "mimicWorm") node.hidden = true; // 拟岩虫看起来像普通节点
         row.push(node);
@@ -160,6 +177,7 @@
     const d = s.dive;
     const node = d.map[d.step][idx];
     if (!node) throw new Error("bad node");
+    if (tooHeavy(s)) throw new Error("too heavy");
     const L = D.LAYERS[d.layer - 1];
     spendO2(s, stepCost(s, d.layer));
     if (L.special === "cliff" && overweight(s) && rnd(s) < 0.35) {
@@ -182,7 +200,7 @@
     if (node.t === "fight" || node.t === "boss") {
       const E = D.ENEMIES[node.e];
       d.enc = { e: node.e, foes: [], frozen: !!node.frozen, boss: node.t === "boss", hidden: !!node.hidden };
-      for (let i = 0; i < E.n; i++) d.enc.foes.push({ hp: Math.round(E.hp * (1 + 0.1 * (s.dives > 6 ? 1 : 0))), max: E.hp });
+      for (let i = 0; i < E.n; i++) d.enc.foes.push({ hp: E.hp, max: E.hp });
       if (node.hidden) say(s, "一块岩石裂开了。是" + E.name + "，路被封住。");
       else say(s, "前方有" + E.name + (E.n > 1 ? " ×" + E.n : "") + "。");
       if (E.trait === "ambush" && !node.frozen) {
@@ -201,8 +219,8 @@
       d.anchor = true;
       say(s, "修好一处锚点。本层回程氧气减半。");
     } else if (node.t === "spring") {
-      d.o2 = Math.min(d.o2Max, d.o2 + 6);
-      say(s, "在热泉边换气。氧气 +6。");
+      d.o2 = Math.min(d.o2Max, d.o2 + 5);
+      say(s, "在热泉边换气。氧气 +5。");
     } else if (node.t === "cache") {
       const n = 2 + Math.floor(rnd(s) * 3);
       d.carry.core += n;
@@ -237,19 +255,29 @@
   function advance(s) {
     const d = s.dive;
     d.step++;
-    if (d.step >= d.map.length) {
-      if (d.layer < D.LAYERS.length && s.cleared[d.layer]) {
-        d.layer++;
-        d.step = 0;
-        d.map = genLayer(s, d.layer);
-        say(s, "下到" + D.LAYERS[d.layer - 1].name + "。");
-      } else {
-        d.atEnd = true;
-      }
-    }
+    if (d.step >= d.map.length) d.atEnd = true; // 据点已清：玩家选择往下一层还是归返
+  }
+  const canDescend = (s) => !!(s.dive && s.dive.atEnd && s.dive.layer < D.LAYERS.length && s.cleared[s.dive.layer]);
+  function descend(s) {
+    const d = s.dive;
+    if (!canDescend(s)) throw new Error("cannot descend");
+    if (tooHeavy(s)) throw new Error("too heavy");
+    d.layer++;
+    d.step = 0;
+    d.atEnd = false;
+    d.map = genLayer(s, d.layer);
+    say(s, "下到" + D.LAYERS[d.layer - 1].name + "。");
   }
 
-  /* ---------- 战斗 ---------- */
+  /* ---------- 战斗 ----------
+     每轮：小队按 猎核者、护卫者、御炉者 的顺序出手，然后每个敌人各攻击一次。生命在一次下潜内不会自己恢复。
+     进阶后的战前选择：
+       破甲（猎核者）：先花 2 轮研究最强的敌人，之后全队对它伤害 +60%；大型敌人（生命 40 以上）被破甲后击杀，取到完整能核（+4）。
+       姿态（护卫者）：展开掩护＝替队友挡下全部攻击、承伤 ×0.5、每挡一次耐力 -1，耐力耗尽自动转为机动反击；
+                       机动反击＝自身伤害 ×2.4，被打时反击一次。
+       模式（御炉者）：投射＝单体 ×3.2；压制＝全体 ×1.3；两者每轮烧 1 个随身能核、散热 +2，到 6 停火一轮。
+                       装甲＝全队护甲 +4，不烧能核，自身伤害很低。 */
+  const BIG = 40;
   function target(s, team) {
     const alive = team.filter((m) => m.hp > 0);
     if (!alive.length) return null;
@@ -257,61 +285,83 @@
     if (g && rnd(s) < 0.4) return g;
     return pick(s, alive);
   }
-  function hurt(s, m, dmg) {
-    const d = s.dive;
+  function hurt(s, m, dmg, foe) {
+    const d = s.dive, enc = d.enc;
     const g = d.team.find((x) => x.id === "guard" && x.hp > 0);
-    let arm = m.arm + (s.cls.stoker.adv && d.mode === "plating" ? 3 : 0);
-    if (g && s.cls.guard.adv && d.stance === "cover" && g.stam > 0 && m !== g) {
-      g.stam -= 2;
+    const plating = s.cls.stoker.adv && d.mode === "plating" && d.team.some((x) => x.id === "stoker" && x.hp > 0);
+    let mul = 1;
+    if (g && s.cls.guard.adv && enc && enc.stance === "cover" && m !== g) {
+      enc.stam--;
       m = g;
-      arm = g.arm + 2;
+      mul = 0.5;
+      if (enc.stam <= 0) {
+        enc.stance = "counter";
+        say(s, "护卫者耐力耗尽，掩护解除。");
+      }
     }
-    m.hp -= Math.max(1, Math.round(dmg - arm));
+    const arm = m.arm + (plating ? 4 : 0);
+    m.hp -= Math.max(1, Math.round((dmg * mul * 10) / (10 + arm))); // 护甲按比例减伤，小怪成群也有威胁
+    if (foe && m === g && s.cls.guard.adv && enc && enc.stance === "counter") foe.hp -= g.atk;
   }
 
   function fightRound(s) {
     const d = s.dive, enc = d.enc, E = D.ENEMIES[enc.e];
-    const foes = enc.foes.filter((f) => f.hp > 0);
     const team = d.team.filter((m) => m.hp > 0);
-    const breached = s.cls.hunter.adv && d.breach;
+    const live = () => enc.foes.filter((f) => f.hp > 0);
+    const strongest = () => live().reduce((a, b) => (b.hp > a.hp ? b : a));
+    const mulOf = (f) => (f.breached ? 1.6 : 1);
+    enc.round = (enc.round || 0) + 1;
     for (const m of team) {
-      if (!foes.some((f) => f.hp > 0)) break;
-      const live = foes.filter((f) => f.hp > 0);
-      const strongest = live.reduce((a, b) => (b.hp > a.hp ? b : a));
-      const mul = breached && strongest.breached ? 1.3 : 1;
+      if (!live().length) break;
+      const tgt = strongest();
       if (m.id === "hunter") {
-        if (breached && !strongest.breached) {
-          strongest.breached = true; // 破甲占用这一轮的攻击
+        if (s.cls.hunter.adv && d.breach && !tgt.breached) {
+          tgt.study = (tgt.study || 0) + 1; // 研究两轮才破甲
+          if (tgt.study >= 2) tgt.breached = true;
           continue;
         }
-        strongest.hp -= m.atk * mul * (live.length > 2 ? 0.8 : 1.2);
+        tgt.hp -= m.atk * mulOf(tgt) * (live().length > 2 ? 0.8 : 1.2);
       } else if (m.id === "guard") {
-        const counter = s.cls.guard.adv && d.stance === "counter";
-        strongest.hp -= m.atk * mul * (counter ? 2.2 : 1);
-        if (!counter) m.stam = Math.min(30, m.stam + 1);
+        const k = !s.cls.guard.adv ? 1 : enc.stance === "counter" ? 2.4 : 0.6;
+        tgt.hp -= m.atk * k * mulOf(tgt);
       } else {
-        const mode = s.cls.stoker.adv ? d.mode : "blanket";
+        const mode = s.cls.stoker.adv ? d.mode : "basic";
+        if (enc.heat >= 6) {
+          enc.heat = 0; // 过热停火一轮
+          continue;
+        }
+        if (mode === "plating") {
+          tgt.hp -= m.atk * 0.4 * mulOf(tgt);
+          continue;
+        }
         const fuel = d.carry.core > 0;
-        d.burn = (d.burn || 0) + 1;
-        if (fuel && mode !== "plating" && d.burn % 3 === 0) d.carry.core--; // 每三轮烧掉 1 个随身能核
-        const pow = m.atk * (fuel ? 1.6 : 0.6);
-        if (mode === "lance") strongest.hp -= pow * 2.2 * mul;
-        else if (mode === "blanket") for (const f of live) f.hp -= pow * (f.breached && breached ? 1.3 : 1);
-        else strongest.hp -= m.atk * 0.6;
+        if (mode === "basic") {
+          if (fuel && enc.round % 2 === 0) burn(d);
+          for (const f of live()) f.hp -= m.atk * (fuel ? 1 : 0.4) * mulOf(f);
+          continue;
+        }
+        if (fuel) burn(d);
+        enc.heat = (enc.heat || 0) + 2;
+        if (mode === "lance") tgt.hp -= m.atk * (fuel ? 3.2 : 0.8) * mulOf(tgt);
+        else for (const f of live()) f.hp -= m.atk * (fuel ? 1.3 : 0.4) * mulOf(f);
       }
     }
-    for (const f of foes) {
+    for (const f of enc.foes) {
       if (f.hp <= 0) continue;
       const t = target(s, d.team);
       if (!t) break;
-      hurt(s, t, E.atk);
-      if (t.id === "guard" && s.cls.guard.adv && d.stance === "counter") f.hp -= t.atk * 0.8;
+      hurt(s, t, E.atk, f);
     }
-    const g = d.team.find((x) => x.id === "guard");
-    if (g && g.stam <= 0 && d.stance === "cover") {
-      d.stance = "counter";
-      say(s, "护卫者耐力耗尽，掩护解除。");
-    }
+  }
+  function burn(d) {
+    d.carry.core--;
+    d.burned = (d.burned || 0) + 1;
+  }
+  function prepEnc(s) {
+    const d = s.dive, enc = d.enc;
+    enc.stance = d.stance;
+    enc.stam = 8 + 2 * s.cls.guard.lv;
+    enc.heat = 0;
   }
 
   /* 逐轮快照，供界面回放战斗。 */
@@ -320,6 +370,7 @@
   }
   function runRounds(s) {
     const d = s.dive, enc = d.enc;
+    prepEnc(s);
     const frames = [snap(d)];
     let r = 0;
     while (r++ < MAX_ROUNDS && enc.foes.some((f) => f.hp > 0) && d.team.some((m) => m.hp > 0)) {
@@ -337,6 +388,7 @@
       c.log = [];
       c.rs = (c.rs + 7919 * (i + 1)) | 0;
       const d = c.dive;
+      prepEnc(c);
       let r = 0;
       while (r++ < MAX_ROUNDS && d.enc.foes.some((f) => f.hp > 0) && d.team.some((m) => m.hp > 0)) fightRound(c);
       if (d.team.some((m) => m.hp > 0) && !d.enc.foes.some((f) => f.hp > 0)) {
@@ -344,7 +396,8 @@
         left += d.team.reduce((a, m) => a + Math.max(0, m.hp), 0) / d.team.reduce((a, m) => a + m.max, 0);
       }
     }
-    return { win, n: N, left: win ? left / win : 0 };
+    const now = s.dive.team.reduce((a, m) => a + Math.max(0, m.hp), 0) / s.dive.team.reduce((a, m) => a + m.max, 0);
+    return { win, n: N, left: win ? left / win : 0, cost: win ? Math.max(0, now - left / win) : now };
   }
 
   function fight(s) {
@@ -357,19 +410,18 @@
       return finish(s, "wiped");
     }
     let core = 0;
-    for (const f of enc.foes) core += f.breached ? E.core + 4 : E.core; // 破甲后取到完整能核
+    for (const f of enc.foes) core += f.breached && E.hp >= BIG ? E.core + 4 : E.core; // 破甲的大型敌人取到完整能核
     d.carry.core += core;
     const L = D.LAYERS[d.layer - 1];
-    if (rnd(s) < 0.3) addBag(d.carry.mats, L.mat, 1);
+    if (rnd(s) < 0.35) addBag(d.carry.mats, L.mat, 1);
     if (E.drop) for (const k in E.drop) addBag(d.carry.mats, k, E.drop[k]);
     if (enc.boss && !s.cleared[d.layer]) {
       s.cleared[d.layer] = true;
-      if (d.layer === 1 && !s.flags.wei) s.flags.weiSign = true;
+      if (d.layer === 1 && !s.flags.wei && !s.signAt) s.signAt = s.dives; // 路标要下一次下潜才找得到
       if (d.layer === 3) s.flags.relic = true;
     }
     say(s, "打倒了" + E.name + "。能核 +" + core + "。");
     d.enc = null;
-    for (const m of d.team) if (m.hp > 0) m.hp = Math.min(m.max, m.hp + 4);
     advance(s);
     return "won";
   }
@@ -395,6 +447,11 @@
     }
     throw new Error("bad choice");
   }
+  /* 归返会丢下多少能核（给界面预告）。 */
+  function homeLoss(s) {
+    const d = s.dive, need = returnCost(s);
+    return d.o2 >= need ? 0 : Math.ceil(d.carry.core * Math.min(1, (need - d.o2) * 0.25));
+  }
   const canDetour = (s) => !!(s.dive && s.dive.enc && !s.dive.enc.boss && !s.dive.enc.hidden);
 
   /* ---------- 归返与结算 ---------- */
@@ -406,6 +463,7 @@
       lostShare = Math.min(1, (need - d.o2) * 0.25);
       const lost = Math.ceil(d.carry.core * lostShare);
       d.carry.core -= lost;
+      d.lost = lost;
       say(s, "回程氧气不够，丢下了 " + lost + " 个能核。");
     }
     d.o2 = Math.max(0, d.o2 - need);
@@ -418,7 +476,11 @@
     for (const k in d.carry.mats) addBag(s.store.mats, k, d.carry.mats[k]);
     s.hearth = Math.max(0, s.hearth - D.HEARTH.perDive);
     if (how === "home") say(s, "全员归返。带回能核 " + d.carry.core + "。");
-    s.last = { how, core: d.carry.core, mats: Object.assign({}, d.carry.mats), layer: d.layer };
+    s.last = { how, core: d.carry.core, mats: Object.assign({}, d.carry.mats), layer: d.layer, lost: d.lost || 0, burned: d.burned || 0, dropped: d.dropped || 0 };
+    if (s.signAt && s.dives > s.signAt && !s.flags.wei && !s.flags.weiSign) {
+      s.flags.weiSign = true;
+      say(s, "据点后面的岩壁上，找到了新刻的路标。");
+    }
     s.dive = null;
     return how;
   }
@@ -450,7 +512,7 @@
     s.gear[kind]++;
     return true;
   }
-  const trainCost = (s, id) => 6 * s.cls[id].lv;
+  const trainCost = (s, id) => 8 * s.cls[id].lv;
   function train(s, id) {
     if (s.hearth < 3 || !pay(s, { core: trainCost(s, id) })) return false;
     s.cls[id].lv++;
@@ -490,9 +552,12 @@
   function tideWave(s) {
     if (!s.tide || s.won) return null;
     const w = TIDE[s.tide.wave];
-    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: 10, mats: {} }, map: [], team: ["hunter", "guard", "stoker"].map((id) => member(s, id)), anchor: false, stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
+    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: Math.min(20, s.store.core), mats: {} }, map: [], team: ["hunter", "guard", "stoker"].map((id) => member(s, id)), anchor: false, stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
+    for (const m of s.dive.team) m.arm += Math.floor(s.hearth / 2); // 炉温是防线：炉温越高，守城时护甲越高
     s.dive.enc = { e: w.e, foes: Array.from({ length: w.n }, () => ({ hp: D.ENEMIES[w.e].hp, max: D.ENEMIES[w.e].hp })), boss: true };
+    const fuel = s.dive.carry.core;
     runRounds(s);
+    s.store.core -= fuel - s.dive.carry.core; // 御炉者烧的是库房里的能核
     s.fx.tide = s.tide.wave + 1;
     const held = s.dive.enc.foes.every((f) => f.hp <= 0);
     if (!held) s.hearth = Math.max(0, s.hearth - 3);
@@ -513,5 +578,5 @@
     s.tactic[k] = v;
     if (s.dive) s.dive[k] = v;
   }
-  G.EmberSim = { setTactic, forecast, newGame, startDive, options, moveTo, rescue, act, canDetour, goHome, returnCost, stepCost, weight, capacity, overweight, stoke, build, train, trainCost, promote, repair, routeUnlocked, idleRate, idleTick, tideWave, has, TIDE };
+  G.EmberSim = { tooHeavy, dropToCap, canDescend, descend, homeLoss, setTactic, forecast, newGame, startDive, options, moveTo, rescue, act, canDetour, goHome, returnCost, stepCost, weight, capacity, overweight, stoke, build, train, trainCost, promote, repair, routeUnlocked, idleRate, idleTick, tideWave, has, TIDE };
 })(typeof globalThis !== "undefined" ? globalThis : window);

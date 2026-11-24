@@ -25,7 +25,8 @@
 
   /* 字符串精灵：字母查色表，"." 透明。自动加 1 像素煤色描边和左上打光三段明暗。
      返回 {cv 正常, fl 受击闪白}，尺寸比网格各大 2。 */
-  function bake(rows, cmap) {
+  function bake(rows, cmap, rim) {
+    const RIM = rim ? rgb(rim) : COAL;
     const h = rows.length, w = rows[0].length;
     const at = (x, y) => (x >= 0 && y >= 0 && x < w && y < h && rows[y][x] !== "." ? rows[y][x] : null);
     const cv = mk(w + 2, h + 2), fl = mk(w + 2, h + 2);
@@ -43,8 +44,8 @@
         const k = at(x, y);
         if (!k) {
           if (at(x - 1, y) || at(x + 1, y) || at(x, y - 1) || at(x, y + 1)) {
-            put(A, x, y, COAL);
-            put(B, x, y, COAL);
+            put(A, x, y, RIM);
+            put(B, x, y, RIM);
           }
           continue;
         }
@@ -61,7 +62,6 @@
     cb.putImageData(B, 0, 0);
     return { cv, fl, w: w + 2, h: h + 2 };
   }
-  const flip = (rows) => rows.map((r) => r.split("").reverse().join(""));
 
   /* 小写字母参与明暗，大写字母是平涂（眼睛、灯、发光）。 */
   const TEAM = {
@@ -135,9 +135,9 @@
     ],
   };
   const TEAMC = {
-    hunter: { h: PAL.hunter, k: "#8a7434", s: PAL.skin, g: PAL.frost, w: PAL.snow, W: PAL.hunter, E: PAL.ember },
-    guard: { h: PAL.guard, k: "#456080", s: PAL.skin, g: PAL.frost, m: PAL.snow, E: PAL.ember },
-    stoker: { h: PAL.stoker, k: "#7a3a28", s: PAL.skin, g: PAL.frost, o: PAL.load, E: PAL.ember },
+    hunter: { h: PAL.hunter, k: PAL.rust, s: PAL.skin, g: PAL.frost, w: PAL.snow, W: PAL.hunter, E: PAL.ember },
+    guard: { h: PAL.guard, k: PAL.frost, s: PAL.skin, g: PAL.frost, m: PAL.snow, E: PAL.ember },
+    stoker: { h: PAL.stoker, k: PAL.rust, s: PAL.skin, g: PAL.frost, o: PAL.frost, E: PAL.ember },
     wei: { v: PAL.wei, s: PAL.skin, g: PAL.frost },
   };
 
@@ -181,21 +181,54 @@
       ".xxxxxxxxxxxx.",
       "..yyyyyyyyyy..",
     ],
-    rock: [
-      "....xxxxx.....",
-      "..xxxxxxxxx...",
-      ".xxxxxxxxxxx..",
-      ".xxxxxxxxxxxx.",
-      "xxxxxxxxxxxxxx",
-      "xxxxxxxxxxxxxx",
-      "xxxxxxxxxxxxxx",
-      ".xxxxxxxxxxxx.",
-      "..yyyyyyyyyy..",
-    ],
   };
-  const BOSS = { hyenaMatron: "whiteHyena", wellWarden: "chorusBat", fumeTyrant: "mimicWorm" };
+  /* 据点首领：各有一张原尺寸的精灵，不放大普通敌人。 */
+  FOES.hyenaMatron = [
+    "...yy.y.y...................",
+    "..yxxyxyxy..................",
+    ".xxxxxxxxxxy.y.y............",
+    "xWxxxxxxxxxxyxyxy...........",
+    "xxxxxxxxxxxxxxxxxxxxxx......",
+    "xxxCxxxxxxxxxxxxxxxxxxxx....",
+    ".xxxxxxxxxxxxxxxxxxxxxxxxx..",
+    "..xxxxxxxxxxxxxxxxxxxxxx.xx.",
+    "...xxxxxxxxxxxxxxxxxxx....xx",
+    "...xx.xx.........xx.xx......",
+    "...xx.xx.........xx.xx......",
+    "...xx.xx.........xx.xx......",
+    "..xxx.xxx.......xxx.xxx.....",
+  ];
+  FOES.wellWarden = [
+    "x......................x",
+    "xx....................xx",
+    "xxx..y............y..xxx",
+    "xxxx.yy..xxxxxx..yy.xxxx",
+    "xxxxxyyyxxxxxxxxyyyxxxxx",
+    "xxxxxxyxxWxxxxWxxyxxxxxx",
+    ".xxxxxxxxxxxxxxxxxxxxxx.",
+    "..xxxxxxxxCCCCxxxxxxxx..",
+    "...xxx.xxxxxxxxxx.xxx...",
+    "....x..xxxxxxxxxx..x....",
+    ".......xxxxxxxxxx.......",
+    "........xxxxxxxx........",
+    "........yy....yy........",
+    ".......yy......yy.......",
+  ];
+  FOES.fumeTyrant = [
+    "........xxxxxxx...............",
+    "......xxxxxxxxxxx.............",
+    "....xxxxxCxxxxxxxxx...........",
+    "...xxWxxxxCxxWxxxxxxx.........",
+    "..xxxxxxxxxCxxxxxxxxxxx.......",
+    ".xxxWxxxxxxxxxxxWxxxxxxxx.....",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+    "xxCCCCCCxxxxxxxxxxxxxxxxxxxx..",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx.",
+    ".xxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "..xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "...yyyyyyyyyyyyyyyyyyyyyyyyyy.",
+  ];
   const FOEC = { x: PAL.foe, y: PAL.foeD, W: PAL.snow, C: PAL.coal };
-  const BOSSC = { x: PAL.foe, y: PAL.foeD, W: PAL.snow, C: PAL.coal };
 
   /* 节点图标 8×8，平涂。 */
   const ICONS = {
@@ -211,7 +244,7 @@
     load: ["..XXX...", "..X.X...", "XXXXXXX.", "X.....X.", "X.....X.", "X.....X.", "XXXXXXX.", "........"],
     fire: ["...X....", "..XX.X..", ".XXX.X..", ".XXXXX..", "XXOOXXX.", "XXOOOXX.", ".XXXXX..", "........"],
   };
-  const ICONC = { fight: PAL.blood, boss: PAL.hearth, crate: PAL.o2, anchor: PAL.snow, spring: PAL.o2, cache: PAL.load, unknown: PAL.frost, core: PAL.ember, o2: PAL.o2, load: PAL.load, fire: PAL.hearth };
+  const ICONC = { fight: PAL.blood, boss: PAL.blood, crate: PAL.frost, anchor: PAL.snow, spring: PAL.o2, cache: PAL.snow, unknown: PAL.frost, core: PAL.ember, o2: PAL.o2, load: PAL.load, fire: PAL.hearth };
 
   /* 3×5 像素数字。 */
   const DIG = {
@@ -224,7 +257,7 @@
     return cache[key] || (cache[key] = fn());
   }
   const teamSpr = (id) => get("t" + id, () => bake(TEAM[id], TEAMC[id]));
-  const foeSpr = (id, boss) => get("f" + id + boss, () => bake(flip(FOES[id]), boss ? BOSSC : FOEC));
+  const foeSpr = (id, br) => get("f" + id + (br ? "b" : ""), () => bake(FOES[id], FOEC, br ? PAL.hunter : null));
   function iconCanvas(id, col) {
     return get("i" + id + (col || ""), () => {
       const rows = ICONS[id], cv = mk(8, 8), c = cv.getContext("2d");
@@ -417,24 +450,15 @@
     const eid = fx ? fx.e : enc ? enc.e : null;
     if (eid) {
       const E = G.EmberData.ENEMIES[eid];
-      const boss = E.trait === "boss";
-      const base = boss ? BOSS[eid] : eid;
-      const sp = foeSpr(base, boss);
       const hps = frame ? frame.f : enc.foes.map((f) => f.hp);
       const br = frame ? frame.b : enc.foes.map((f) => (f.breached ? 1 : 0));
-      const n = hps.length, sc = boss ? 2 : 1;
-      for (let k = 0; k < n; k++) {
+      for (let k = 0; k < hps.length; k++) {
         if (hps[k] <= 0) continue;
-        const col = k % 4, row = Math.floor(k / 4);
-        const x = W - 16 - sp.w * sc - col * (sp.w * sc * 0.6 + 4) - row * 8;
-        const y = FLOOR - sp.h * sc + 1 - row * 10 - (base === "chorusBat" ? 18 + ((k * 7) % 10) : 0);
+        const sp = foeSpr(eid, br[k]);
+        const p = place(eid, k);
         const img = view.flash && view.flash["f" + k] > t ? sp.fl : sp.cv;
-        c.drawImage(img, x, y, sp.w * sc, sp.h * sc);
-        if (br[k]) {
-          c.fillStyle = PAL.hunter;
-          c.fillRect(x, y - 1, sp.w * sc, 1);
-        }
-        bar(c, x + 1, y - 4, sp.w * sc - 2, hps[k] / (E.hp || 1), PAL.blood);
+        c.drawImage(img, p.x, p.y);
+        bar(c, p.x + 1, p.y - 4, sp.w - 2, hps[k] / (E.hp || 1), PAL.blood);
       }
     }
     // 飘字
@@ -454,13 +478,19 @@
     c.fillStyle = col;
     c.fillRect(x, y, Math.max(0, Math.round(w * Math.min(1, k))), 2);
   }
+  /* 敌人在画面上的位置：从右往左排，每排 4 个；蝙蝠悬在半空。坐标全部取整。 */
+  function place(eid, i) {
+    const sp = foeSpr(eid, 0);
+    const col = i % 4, row = Math.floor(i / 4);
+    const x = Math.round(W - 8 - sp.w - col * (Math.round(sp.w * 0.6) + 4) - row * 8);
+    const y = Math.round(FLOOR - sp.h + 1 - row * 10 - (eid === "chorusBat" ? 18 + ((i * 7) % 10) : 0));
+    return { x, y };
+  }
   /* 战斗回放中各单位的屏幕位置，给飘字用。 */
   function slot(kind, i, n, eid) {
     if (kind === "t") return { x: 14 + i * 18, y: FLOOR - 24 };
-    const E = G.EmberData.ENEMIES[eid], boss = E.trait === "boss";
-    const base = boss ? BOSS[eid] : eid, sp = foeSpr(base, boss), sc = boss ? 2 : 1;
-    const col = i % 4, row = Math.floor(i / 4);
-    return { x: W - 16 - sp.w * sc - col * (sp.w * sc * 0.6 + 4) - row * 8 + 4, y: FLOOR - sp.h * sc - row * 10 - (base === "chorusBat" ? 18 + ((i * 7) % 10) : 0) - 4 };
+    const p = place(eid, i);
+    return { x: p.x + 4, y: p.y - 4 };
   }
 
   G.EmberPixel = { W, H, PAL, draw, iconURL, slot };
