@@ -22,6 +22,7 @@
   --guard: #7fa8d8;
   --stoker: #e0704a;
   --fs: 12px;
+  color-scheme: dark;
 }
 @media (min-width: 400px) {
   :root { --fs: 12px; }
