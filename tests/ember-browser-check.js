@@ -42,7 +42,8 @@ async function launch() {
       await p.click("[data-act=go]");
       // 造一场遭遇：第一步只有白鬣
       await p.evaluate(() => {
-        __ember.state.dive.map[0] = [{ t: "fight", e: "whiteHyena" }];
+        __ember.state.dive.map[0] = [{ t: "fight", e: "whiteHyena", n: 1 }];
+        for (const id in __ember.state.cls) __ember.state.cls[id].adv = true; // 进阶后战术区最高，按最坏情况量
       });
       await p.evaluate(() => document.querySelector("[data-act=tab]") || 0);
       await p.evaluate(() => __ember.save());
@@ -50,13 +51,13 @@ async function launch() {
       await p.waitForTimeout(300);
       await p.click("[data-act=node]");
       // 遭遇时三个按钮都要在首屏内
-      const vis = await p.evaluate(() => ["fight", "detour", "retreat"].map((a) => {
-        const r = document.querySelector("[data-act=" + a + "]").getBoundingClientRect();
+      const vis = await p.evaluate(() => ["[data-act=fight]", "[data-act=detour]", "[data-act=retreat]", ".tac"].map((q) => {
+        const r = document.querySelector(q).getBoundingClientRect();
         return r.bottom <= window.innerHeight && r.top >= 0;
       }));
       if (vis.includes(false)) {
         pass = false;
-        note += "遭遇按钮不在首屏 " + vis.join("/") + "；";
+        note += "遭遇的按钮或战术不在首屏 " + vis.join("/") + "；";
       }
       await p.click("[data-act=fight]");
       await p.click("[data-act=skip]");
@@ -75,7 +76,7 @@ async function launch() {
         note += "读档不一致；";
       }
       // 画布整倍放大
-      const k = await p.evaluate(() => document.getElementById("cv").getBoundingClientRect().width / 144);
+      const k = await p.evaluate(() => document.getElementById("cv").getBoundingClientRect().width / 180);
       note += "画布 " + k.toFixed(2) + " 倍";
     } catch (e) {
       pass = false;

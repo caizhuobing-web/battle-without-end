@@ -43,7 +43,7 @@
 
   /* ---------- 负重与氧气 ---------- */
   function gearWeight(s) {
-    return D.GEAR.tank.levels[s.gear.tank].w + D.GEAR.armor.levels[s.gear.armor].w;
+    return D.GEAR.tank.levels[s.gear.tank].w + D.GEAR.armor.levels[s.gear.armor].w + D.GEAR.frame.levels[s.gear.frame].w;
   }
   function capacity(s) {
     return D.GEAR.frame.levels[s.gear.frame].cap;
@@ -90,6 +90,7 @@
   }
 
   /* ---------- 小队 ---------- */
+  const stamMax = (s) => 8 + 2 * s.cls.guard.lv; // 护卫者耐力：整次下潜共用，每走一步回 1
   function member(s, id) {
     const C = D.CLASSES[id], lv = s.cls[id].lv;
     const hp = Math.round(C.hp * (1 + 0.15 * (lv - 1)));
@@ -117,7 +118,11 @@
         else node = { t: "unknown" };
         // 每层只有一处锚点
         if (node.t === "anchor" && (map.some((rw) => rw.some((x) => x.t === "anchor")) || row.some((x) => x.t === "anchor"))) node = { t: "cache" };
-        if (L.special === "frozen" && node.t === "fight" && rnd(s) < 0.4) node.frozen = true;
+        if (node.t === "fight") {
+          const E = D.ENEMIES[node.e];
+          node.n = E.n[0] + Math.floor(rnd(s) * (E.n[1] - E.n[0] + 1)); // 成群的敌人每次数量不同
+          if (L.special === "frozen" && E.trait === "ambush" && rnd(s) < 0.5) node.frozen = true;
+        }
         if (node.e === "mimicWorm") node.hidden = true; // 拟岩虫看起来像普通节点
         row.push(node);
       }
@@ -141,6 +146,7 @@
       enc: null,
       event: null,
       anchor: false,
+      stam: stamMax(s),
       stance: s.tactic.stance,
       mode: s.tactic.mode,
       breach: s.tactic.breach,
@@ -180,11 +186,16 @@
     if (tooHeavy(s)) throw new Error("too heavy");
     const L = D.LAYERS[d.layer - 1];
     spendO2(s, stepCost(s, d.layer));
+    d.stam = Math.min(stamMax(s), (d.stam == null ? stamMax(s) : d.stam) + 1);
     if (L.special === "cliff" && overweight(s) && rnd(s) < 0.35) {
       for (const m of d.team) if (m.hp > 0) m.hp = Math.max(1, m.hp - 8);
       say(s, "超重，在峭壁上滑落。全员生命 -8。");
     }
     d.cur = node;
+    if (d.layer === 1 && d.step >= 2 && s.signAt && s.dives > s.signAt && !s.flags.wei && !s.flags.weiSign) {
+      s.flags.weiSign = true;
+      say(s, "岩壁上有新刻的路标，指向更深处。有人走过这条路。");
+    }
     if (d.layer === 1 && d.step === 2 && !s.flags.metWei) {
       s.flags.metWei = true;
       d.event = "rescue";
@@ -200,9 +211,10 @@
     if (node.t === "fight" || node.t === "boss") {
       const E = D.ENEMIES[node.e];
       d.enc = { e: node.e, foes: [], frozen: !!node.frozen, boss: node.t === "boss", hidden: !!node.hidden };
-      for (let i = 0; i < E.n; i++) d.enc.foes.push({ hp: E.hp, max: E.hp });
+      const n = node.n || E.n[0];
+      for (let i = 0; i < n; i++) d.enc.foes.push({ hp: E.hp, max: E.hp });
       if (node.hidden) say(s, "一块岩石裂开了。是" + E.name + "，路被封住。");
-      else say(s, "前方有" + E.name + (E.n > 1 ? " ×" + E.n : "") + "。");
+      else say(s, "前方有" + E.name + (n > 1 ? " ×" + n : "") + "。");
       if (E.trait === "ambush" && !node.frozen) {
         const t = target(s, d.team);
         if (t) hurt(s, t, E.atk * 1.5);
@@ -290,18 +302,18 @@
     const g = d.team.find((x) => x.id === "guard" && x.hp > 0);
     const plating = s.cls.stoker.adv && d.mode === "plating" && d.team.some((x) => x.id === "stoker" && x.hp > 0);
     let mul = 1;
-    if (g && s.cls.guard.adv && enc && enc.stance === "cover" && m !== g) {
-      enc.stam--;
+    if (g && s.cls.guard.adv && enc && enc.stance === "cover" && m !== g && d.stam > 0) {
+      d.stam--;
       m = g;
       mul = 0.5;
-      if (enc.stam <= 0) {
+      if (d.stam <= 0) {
         enc.stance = "counter";
-        say(s, "护卫者耐力耗尽，掩护解除。");
+        enc.switched = (enc.switched || 0) + 1;
       }
     }
     const arm = m.arm + (plating ? 4 : 0);
     m.hp -= Math.max(1, Math.round((dmg * mul * 10) / (10 + arm))); // 护甲按比例减伤，小怪成群也有威胁
-    if (foe && m === g && s.cls.guard.adv && enc && enc.stance === "counter") foe.hp -= g.atk;
+    if (foe && m === g && s.cls.guard.adv && enc && enc.stance === "counter") foe.hp -= g.atk * 0.6;
   }
 
   function fightRound(s) {
@@ -322,7 +334,7 @@
         }
         tgt.hp -= m.atk * mulOf(tgt) * (live().length > 2 ? 0.8 : 1.2);
       } else if (m.id === "guard") {
-        const k = !s.cls.guard.adv ? 1 : enc.stance === "counter" ? 2.4 : 0.6;
+        const k = !s.cls.guard.adv ? 1 : enc.stance === "counter" ? 2 : 0.6;
         tgt.hp -= m.atk * k * mulOf(tgt);
       } else {
         const mode = s.cls.stoker.adv ? d.mode : "basic";
@@ -348,9 +360,23 @@
     }
     for (const f of enc.foes) {
       if (f.hp <= 0) continue;
+      // 据点首领每 3 轮重击一次队里最虚弱的人（不是护卫者），展开掩护可以替他挡下
+      if (E.trait === "boss" && enc.round % 3 === 0) {
+        const weak = d.team.filter((m) => m.hp > 0 && m.id !== "guard").sort((a, b) => a.hp - b.hp)[0] || target(s, d.team);
+        if (weak) hurt(s, weak, E.atk * 2.5, f);
+        continue;
+      }
       const t = target(s, d.team);
       if (!t) break;
       hurt(s, t, E.atk, f);
+    }
+    // 战斗中切换姿态：反击时每轮回 1 点耐力；耐力回到一半且有队友生命低于一半时，重新展开掩护
+    if (s.cls.guard.adv && enc.stance === "counter") {
+      d.stam = Math.min(stamMax(s), d.stam + 1);
+      if (d.stance === "cover" && d.stam >= stamMax(s) / 2 && d.team.some((m) => m.id !== "guard" && m.hp > 0 && m.hp < m.max / 2)) {
+        enc.stance = "cover";
+        enc.switched = (enc.switched || 0) + 1;
+      }
     }
   }
   function burn(d) {
@@ -359,8 +385,8 @@
   }
   function prepEnc(s) {
     const d = s.dive, enc = d.enc;
-    enc.stance = d.stance;
-    enc.stam = 8 + 2 * s.cls.guard.lv;
+    enc.stance = d.stam > 0 ? d.stance : "counter";
+    if (d.stam == null) d.stam = stamMax(s);
     enc.heat = 0;
   }
 
@@ -378,10 +404,11 @@
       frames.push(snap(d));
     }
     s.fx = { e: enc.e, boss: !!enc.boss, layer: d.layer, max: d.team.map((m) => m.max), frames };
+    if (enc.switched) say(s, "护卫者在战斗中切换了 " + enc.switched + " 次姿态。");
   }
   /* 战前预估：换 5 个随机种子在副本上各打一遍。返回 {win 胜场数, n 总场数, left 胜局平均剩余生命比例}。 */
   function forecast(s) {
-    let win = 0, left = 0;
+    let win = 0, left = 0, burned = 0;
     const N = 5;
     for (let i = 0; i < N; i++) {
       const c = JSON.parse(JSON.stringify(s));
@@ -389,15 +416,17 @@
       c.rs = (c.rs + 7919 * (i + 1)) | 0;
       const d = c.dive;
       prepEnc(c);
+      const c0 = d.carry.core;
       let r = 0;
       while (r++ < MAX_ROUNDS && d.enc.foes.some((f) => f.hp > 0) && d.team.some((m) => m.hp > 0)) fightRound(c);
+      burned += c0 - d.carry.core;
       if (d.team.some((m) => m.hp > 0) && !d.enc.foes.some((f) => f.hp > 0)) {
         win++;
         left += d.team.reduce((a, m) => a + Math.max(0, m.hp), 0) / d.team.reduce((a, m) => a + m.max, 0);
       }
     }
     const now = s.dive.team.reduce((a, m) => a + Math.max(0, m.hp), 0) / s.dive.team.reduce((a, m) => a + m.max, 0);
-    return { win, n: N, left: win ? left / win : 0, cost: win ? Math.max(0, now - left / win) : now };
+    return { win, n: N, left: win ? left / win : 0, cost: win ? Math.max(0, now - left / win) : now, burned: Math.round(burned / N) };
   }
 
   function fight(s) {
@@ -413,7 +442,7 @@
     for (const f of enc.foes) core += f.breached && E.hp >= BIG ? E.core + 4 : E.core; // 破甲的大型敌人取到完整能核
     d.carry.core += core;
     const L = D.LAYERS[d.layer - 1];
-    if (rnd(s) < 0.35) addBag(d.carry.mats, L.mat, 1);
+    if (rnd(s) < 0.45) addBag(d.carry.mats, L.mat, 1);
     if (E.drop) for (const k in E.drop) addBag(d.carry.mats, k, E.drop[k]);
     if (enc.boss && !s.cleared[d.layer]) {
       s.cleared[d.layer] = true;
@@ -435,7 +464,7 @@
     if (choice === "retreat") return goHome(s);
     if (choice === "detour") {
       if (!canDetour(s)) throw new Error("cannot detour");
-      spendO2(s, 1 + (d.enc.frozen ? 1 : 0));
+      spendO2(s, detourCost(s));
       if (E.trait === "track" && rnd(s) < 0.5) {
         say(s, E.name + "循着声音追了上来，没能甩开。");
         return fight(s);
@@ -452,6 +481,8 @@
     const d = s.dive, need = returnCost(s);
     return d.o2 >= need ? 0 : Math.ceil(d.carry.core * Math.min(1, (need - d.o2) * 0.25));
   }
+  /* 绕行的氧气：1，冰封或攀壁蜥再 +1。 */
+  const detourCost = (s) => 1 + (s.dive.enc.frozen ? 1 : 0) + (D.ENEMIES[s.dive.enc.e].trait === "cling" ? 1 : 0);
   const canDetour = (s) => !!(s.dive && s.dive.enc && !s.dive.enc.boss && !s.dive.enc.hidden);
 
   /* ---------- 归返与结算 ---------- */
@@ -475,12 +506,9 @@
     s.store.core += d.carry.core;
     for (const k in d.carry.mats) addBag(s.store.mats, k, d.carry.mats[k]);
     s.hearth = Math.max(0, s.hearth - D.HEARTH.perDive);
-    if (how === "home") say(s, "全员归返。带回能核 " + d.carry.core + "。");
-    s.last = { how, core: d.carry.core, mats: Object.assign({}, d.carry.mats), layer: d.layer, lost: d.lost || 0, burned: d.burned || 0, dropped: d.dropped || 0 };
-    if (s.signAt && s.dives > s.signAt && !s.flags.wei && !s.flags.weiSign) {
-      s.flags.weiSign = true;
-      say(s, "据点后面的岩壁上，找到了新刻的路标。");
-    }
+    if (how === "home") say(s, (d.team.some((m) => m.hp <= 0) ? "归返，有人是被抬回来的。" : "全员归返。") + "带回能核 " + d.carry.core + "。");
+    s.last = { how, core: d.carry.core, mats: Object.assign({}, d.carry.mats), layer: d.layer, lost: d.lost || 0, burned: d.burned || 0, dropped: d.dropped || 0, down: d.team.filter((m) => m.hp <= 0).map((m) => m.id) };
+
     s.dive = null;
     return how;
   }
@@ -512,7 +540,7 @@
     s.gear[kind]++;
     return true;
   }
-  const trainCost = (s, id) => 8 * s.cls[id].lv;
+  const trainCost = (s, id) => 6 * s.cls[id].lv;
   function train(s, id) {
     if (s.hearth < 3 || !pay(s, { core: trainCost(s, id) })) return false;
     s.cls[id].lv++;
@@ -524,9 +552,20 @@
     return true;
   }
   const routeUnlocked = (s) => !!(s.flags.wei || s.flags.weiSign);
+  /* 救了苇：她带路，第一段补给线少用 能核 15、冻筋 2。 */
+  function routeNeed(s, i) {
+    const seg = D.ROUTE[i];
+    if (!seg) return null;
+    const need = Object.assign({}, seg.need);
+    if (i === 0 && s.flags.wei) {
+      need.core -= 15;
+      need.frostSinew -= 2;
+    }
+    return need;
+  }
   function repair(s) {
     const seg = D.ROUTE[s.route];
-    if (!seg || !routeUnlocked(s) || !s.cleared[seg.layer] || !pay(s, seg.need)) return false;
+    if (!seg || !routeUnlocked(s) || !s.cleared[seg.layer] || !pay(s, routeNeed(s, s.route))) return false;
     s.route++;
     if (s.route === D.ROUTE.length) s.tide = { wave: 0 };
     return true;
@@ -549,12 +588,20 @@
     { e: "chorusBat", n: 8 },
     { e: "fumeTyrant", n: 1 },
   ];
-  function tideWave(s) {
-    if (!s.tide || s.won) return null;
+  function tideSetup(s) {
     const w = TIDE[s.tide.wave];
-    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: Math.min(20, s.store.core), mats: {} }, map: [], team: ["hunter", "guard", "stoker"].map((id) => member(s, id)), anchor: false, stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
+    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: Math.min(20, s.store.core), mats: {} }, map: [], team: ["hunter", "guard", "stoker"].map((id) => member(s, id)), anchor: false, stam: stamMax(s), stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
     for (const m of s.dive.team) m.arm += Math.floor(s.hearth / 2); // 炉温是防线：炉温越高，守城时护甲越高
     s.dive.enc = { e: w.e, foes: Array.from({ length: w.n }, () => ({ hp: D.ENEMIES[w.e].hp, max: D.ENEMIES[w.e].hp })), boss: true };
+  }
+  function tideForecast(s) {
+    const c = JSON.parse(JSON.stringify(s));
+    tideSetup(c);
+    return forecast(c);
+  }
+  function tideWave(s) {
+    if (!s.tide || s.won) return null;
+    tideSetup(s);
     const fuel = s.dive.carry.core;
     runRounds(s);
     s.store.core -= fuel - s.dive.carry.core; // 御炉者烧的是库房里的能核
@@ -578,5 +625,5 @@
     s.tactic[k] = v;
     if (s.dive) s.dive[k] = v;
   }
-  G.EmberSim = { tooHeavy, dropToCap, canDescend, descend, homeLoss, setTactic, forecast, newGame, startDive, options, moveTo, rescue, act, canDetour, goHome, returnCost, stepCost, weight, capacity, overweight, stoke, build, train, trainCost, promote, repair, routeUnlocked, idleRate, idleTick, tideWave, has, TIDE };
+  G.EmberSim = { detourCost, tideForecast, routeNeed, stamMax, tooHeavy, dropToCap, canDescend, descend, homeLoss, setTactic, forecast, newGame, startDive, options, moveTo, rescue, act, canDetour, goHome, returnCost, stepCost, weight, capacity, overweight, stoke, build, train, trainCost, promote, repair, routeUnlocked, idleRate, idleTick, tideWave, has, TIDE };
 })(typeof globalThis !== "undefined" ? globalThis : window);

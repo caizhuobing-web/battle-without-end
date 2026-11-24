@@ -15,7 +15,7 @@ const stats = { enc: 0, sure: 0, retreat: 0 };
 function pickTactic(s) {
   const d = s.dive, E = D.ENEMIES[d.enc.e], many = d.enc.foes.length > 2;
   S.setTactic(s, "breach", E.hp >= 40);
-  S.setTactic(s, "stance", many ? "counter" : "cover");
+  S.setTactic(s, "stance", E.trait === "boss" || E.hp >= 40 ? "cover" : "counter");
   S.setTactic(s, "mode", d.carry.core < 4 ? "plating" : many ? "blanket" : "lance");
 }
 
@@ -161,8 +161,12 @@ function playThrough(seed, maxDives) {
   S.goHome(t);
   assert(!S.routeUnlocked(t), "sign not found on the same dive");
   S.startDive(t, 1);
-  S.goHome(t);
-  assert(S.routeUnlocked(t), "sign found one dive later");
+  for (let i = 0; i < 3; i++) t.dive.map[i] = [{ t: "cache" }];
+  S.moveTo(t, 0);
+  S.moveTo(t, 0);
+  assert(!S.routeUnlocked(t), "sign is deep in the layer, not at the entrance");
+  S.moveTo(t, 0);
+  assert(S.routeUnlocked(t), "sign found one dive later, at step 3");
 }
 
 /* 5. 拟岩虫与据点不能绕行 */

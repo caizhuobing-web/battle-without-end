@@ -2,19 +2,21 @@
 (function (G) {
   const LAYERS = [
     { id: 1, name: "霜根廊", o2Step: 1, steps: 4, mat: "frostSinew", enemies: ["whiteHyena", "frostRat"], boss: "hyenaMatron", special: "frozen" },
-    { id: 2, name: "回声井", o2Step: 2, steps: 5, mat: "plateBone", enemies: ["chorusBat", "frostRat"], boss: "wellWarden", special: "cliff" },
-    { id: 3, name: "沸雾窟", o2Step: 2, steps: 4, mat: "redCore", enemies: ["mimicWorm", "chorusBat"], boss: "fumeTyrant", special: "fog" },
+    { id: 2, name: "回声井", o2Step: 2, steps: 5, mat: "plateBone", enemies: ["chorusBat", "cliffLizard"], boss: "wellWarden", special: "cliff" },
+    { id: 3, name: "沸雾窟", o2Step: 2, steps: 4, mat: "redCore", enemies: ["mimicWorm", "emberMoth"], boss: "fumeTyrant", special: "fog" },
   ];
 
-  /* 敌人：hp 生命，atk 攻击，core 碎核掉落，trait 行为。 */
+  /* 敌人：hp 生命，atk 攻击，core 能核掉落，n 一群的数量范围，trait 行为。每层的普通敌人只在该层出现。 */
   const ENEMIES = {
-    frostRat: { name: "冻鼠群", hp: 18, atk: 8, core: 3, n: 3, trait: "" },
-    whiteHyena: { name: "白鬣", hp: 45, atk: 14, core: 6, n: 1, trait: "ambush" },
-    chorusBat: { name: "群鸣蝠", hp: 14, atk: 8, core: 3, n: 4, trait: "track" },
-    mimicWorm: { name: "拟岩虫", hp: 80, atk: 17, core: 9, n: 1, trait: "mimic" },
-    hyenaMatron: { name: "老鬣首", hp: 160, atk: 18, core: 14, n: 1, trait: "boss", drop: { frostSinew: 2 } },
-    wellWarden: { name: "井口守兽", hp: 300, atk: 22, core: 22, n: 1, trait: "boss", drop: { plateBone: 2, toughPlate: 2 } },
-    fumeTyrant: { name: "雾窟巨兽", hp: 420, atk: 26, core: 32, n: 1, trait: "boss", drop: { redCore: 1, heatWire: 2 } },
+    frostRat: { name: "冻鼠群", hp: 18, atk: 8, core: 4, n: [2, 4], trait: "" },
+    whiteHyena: { name: "白鬣", hp: 45, atk: 14, core: 8, n: [1, 2], trait: "ambush" },
+    chorusBat: { name: "群鸣蝠", hp: 14, atk: 8, core: 4, n: [3, 6], trait: "track" },
+    cliffLizard: { name: "攀壁蜥", hp: 32, atk: 10, core: 6, n: [1, 3], trait: "cling" },
+    emberMoth: { name: "灼雾蛾", hp: 12, atk: 9, core: 5, n: [3, 6], trait: "" },
+    mimicWorm: { name: "拟岩虫", hp: 80, atk: 17, core: 12, n: [1, 1], trait: "mimic" },
+    hyenaMatron: { name: "老鬣首", hp: 160, atk: 18, core: 18, n: [1, 1], trait: "boss", drop: { frostSinew: 2 } },
+    wellWarden: { name: "井口守兽", hp: 300, atk: 22, core: 28, n: [1, 1], trait: "boss", drop: { plateBone: 2, toughPlate: 2 } },
+    fumeTyrant: { name: "雾窟巨兽", hp: 420, atk: 26, core: 40, n: [1, 1], trait: "boss", drop: { redCore: 1, heatWire: 2 } },
   };
 
   const MATS = {
@@ -38,12 +40,12 @@
   const GEAR = {
     tank: { name: "氧罐", levels: [{ o2: 12, w: 2 }, { o2: 18, w: 3, cost: { core: 20 } }, { o2: 26, w: 4, cost: { core: 45, plateBone: 2 } }] },
     armor: { name: "护具", levels: [{ arm: 0, w: 0 }, { arm: 2, w: 2, cost: { core: 16, frostSinew: 2 } }, { arm: 4, w: 3, cost: { core: 40, plateBone: 2 } }] },
-    frame: { name: "背架", levels: [{ cap: 14 }, { cap: 20, cost: { core: 24 } }, { cap: 28, cost: { core: 50, plateBone: 1 } }] },
+    frame: { name: "背架", levels: [{ cap: 14, w: 1 }, { cap: 20, w: 1, cost: { core: 24 } }, { cap: 28, w: 2, cost: { core: 50, plateBone: 1 } }] },
   };
 
   /* 补给线三段。rate 为常规队伍每分钟能核产出。 */
   const ROUTE = [
-    { layer: 1, need: { core: 30, frostSinew: 4 }, rate: 0.5 },
+    { layer: 1, need: { core: 30, frostSinew: 4 }, rate: 0.5 }, // 救了苇：能核 -15、冻筋 -2
     { layer: 2, need: { core: 50, plateBone: 2 }, rate: 1 },
     { layer: 3, need: { core: 70, redCore: 2 }, rate: 1.5 },
   ];

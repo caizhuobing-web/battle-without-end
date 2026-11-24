@@ -104,7 +104,7 @@
     opt = Object.assign(opt, JSON.parse(localStorage.getItem(OPT) || "{}"));
   } catch (e) {}
   A.set(opt.snd);
-  const view = { tab: "go", fight: null, floats: [], flash: {}, shake: 0, walk: 0, reveal: 0, startLayer: 1, after: null };
+  const view = { tab: "go", fight: null, floats: [], flash: {}, shake: 0, walk: 0, scroll: 0, lungeT: 0, lungeF: 0, startLayer: 1 };
 
   /* ---------- 画布 ---------- */
   const cv = $("cv"), cx = cv.getContext("2d");
@@ -113,7 +113,7 @@
   /* 画布整倍放大：宽高都按 144×96 的整数倍取，放不下 2 倍时才用小数倍。 */
   function fit() {
     const land = window.matchMedia("(min-aspect-ratio: 4/3) and (min-width: 640px)").matches;
-    const aw = $("stage").clientWidth, ah = land ? window.innerHeight - 60 : window.innerHeight * 0.42;
+    const aw = $("stage").clientWidth, ah = land ? window.innerHeight - 60 : window.innerHeight * 0.45;
     let k = Math.min(aw / P.W, ah / P.H);
     if (k >= 2) k = Math.floor(k);
     cv.style.width = Math.floor(P.W * k) + "px";
@@ -126,6 +126,7 @@
     const t = ms / 1000, dt = Math.min(0.1, t - lastT || 0);
     lastT = t;
     view.shake = Math.max(0, view.shake - dt * 3);
+    if (view.walk > 0) view.scroll += dt * 48;
     view.walk = Math.max(0, view.walk - dt);
     if (view.fight) stepFight(t);
     P.draw(cx, st, view, t);
@@ -170,13 +171,18 @@
       }
     });
     if (view.floats.length > 24) view.floats.splice(0, view.floats.length - 24);
-    if (hit) A.play("hit");
+    if (hit) {
+      A.play("hit");
+      view.lungeT = t + 0.12;
+    }
     if (hurt) {
       A.play("hurt");
       view.shake = 0.6;
+      view.lungeF = t + 0.2;
     }
     f.i++;
     f.next = t + (fr.length > 20 ? 0.2 : 0.32);
+    $("panel").innerHTML = fightPanel();
   }
   function endFight() {
     const f = view.fight;
@@ -410,7 +416,8 @@
   function showResult() {
     const L = st.last;
     const mats = Object.keys(L.mats).filter((k) => L.mats[k] > 0).map((k) => D.MATS[k].name + " " + L.mats[k]).join("，");
-    const head = L.how === "wiped" ? "小队倒下了" : "全员归返";
+    const down = (L.down || []).map((id) => D.CLASSES[id].name).join("、");
+    const head = L.how === "wiped" ? "小队倒下了" : down ? "归返，" + down + "是被抬回来的" : "全员归返";
     const body = L.how === "wiped" ? "背着的东西都丢在了" + D.LAYERS[L.layer - 1].name + "。炉温 -2。" : "带回能核 " + L.core + (mats ? "，" + mats : "") + "。炉温 -1。";
     const loss = [L.lost ? "回程氧气不够，丢下能核 " + L.lost : "", L.dropped ? "太重丢下能核 " + L.dropped : "", L.burned ? "御炉者烧掉能核 " + L.burned : ""].filter(Boolean).join("，");
     show("<h3>" + head + "</h3><p>" + body + "</p>" + (loss ? '<p class="lack">' + loss + "。</p>" : "") + '<div class="btns"><button class="btn main" data-act="close">回到灰炉屯</button></div>');
@@ -475,8 +482,7 @@
     return (
       '<div class="hud">' +
       '<div class="row">' + ic("o2") + '<span class="lbl">氧气 ' + d.o2 + "/" + d.o2Max + "</span>" + barH("o2", d.o2, d.o2Max, rc) + '<span class="lbl ' + (d.o2 < rc ? "lack" : "dim") + '">回程 ' + rc + "</span></div>" +
-      '<div class="row">' + ic("load") + '<span class="lbl ' + (w > cap ? "lack" : "") + '">负重 ' + fmt(w) + "/" + cap + "</span>" + barH("load", w, cap * 1.25, cap) + '<span class="lbl ' + (w > cap ? "lack" : "dim") + '">' + (S.tooHeavy(st) ? "走不动" : w > cap ? "超重" : "") + "</span></div>" +
-      '<div class="row">' + ic("core") + '<span class="lbl">背着能核 ' + d.carry.core + "</span>" + (mats ? '<span class="lbl dim">' + mats + "</span>" : "") + "</div>" +
+      '<div class="row">' + ic("load") + '<span class="lbl ' + (w > cap ? "lack" : "") + '">负重 ' + fmt(w) + "/" + cap + (S.tooHeavy(st) ? " 走不动" : w > cap ? " 超重" : "") + "</span>" + ic("core") + '<span class="lbl">能核 ' + d.carry.core + "</span>" + (st.cls.guard.adv ? '<span class="lbl c-guard">耐力 ' + d.stam + "/" + S.stamMax(st) + "</span>" : "") + (mats ? '<span class="lbl dim">' + mats + "</span>" : "") + "</div>" +
       '<div class="row team">' + d.team.map((m) => '<span class="c-' + m.id + '">' + D.CLASSES[m.id].name + " " + Math.max(0, Math.round(m.hp)) + "/" + m.max + "</span>").join("") + "</div>" +
       "</div>"
     );
@@ -489,66 +495,75 @@
   function nodeText(n, L) {
     if (n.t === "fight") {
       const E = D.ENEMIES[n.e];
-      return [E.name + (E.n > 1 ? " ×" + E.n : ""), n.frozen ? "冰封：绕行时不会被伏击，绕行多费 1 氧气" : TRAIT[E.trait] || "敌情", "fight"];
+      return [E.name + (n.n > 1 ? " ×" + n.n : ""), n.frozen ? "冰封：靠近时不会被伏击，绕行多费 1 氧气" : TRAIT[E.trait], "fight"];
     }
-    if (n.t === "boss") return ["据点 · " + D.ENEMIES[n.e].name, "清掉它才能修复这一段补给线。不能绕行", "boss"];
+    if (n.t === "boss") return ["据点 · " + D.ENEMIES[n.e].name, bossNote(st.dive.layer) + "。不能绕行", "boss"];
     if (n.t === "crate") return ["冰封的旧货箱", "开箱氧气 -1，能核 +4，" + D.MATS[L.mat].name + " +1", "crate"];
-    if (n.t === "anchor") return ["锚点", "修好后，本层回程氧气减半", "anchor"];
-    if (n.t === "spring") return ["热泉", "氧气 +6", "spring"];
+    if (n.t === "anchor") return ["锚点", st.dive.anchor ? "本层锚点已修好" : "修好后，本层回程氧气减半", "anchor"];
+    if (n.t === "spring") return ["热泉", "氧气 +5", "spring"];
     if (n.t === "cache") return ["补给", "能核 +2 到 4", "cache"];
     return ["未知", "可能有余气，也可能塌方", "unknown"];
   }
-  const TRAIT = { ambush: "伏击：靠近时先手一击，冰封时不会", track: "成群追踪：绕行有一半机会甩不掉", mimic: "伪装：靠近才现形，现形后封路", "": "成群：数量多，单个弱" };
+  const TRAIT = { ambush: "伏击：靠近时先手一击", track: "成群追踪：绕行有一半机会甩不掉", cling: "攀在岩壁上：绕行多费 1 氧气", mimic: "伪装：靠近才现形，现形后封路", "": "成群：数量多，单个弱" };
+  function bossNote(layer) {
+    return st.route >= layer ? "据点首领，每 3 轮重击一次最虚弱的队员" : "清掉它才能修复这一段补给线。每 3 轮重击一次最虚弱的队员";
+  }
   function divePanel() {
     const d = st.dive, L = D.LAYERS[d.layer - 1];
     let h = hudBlock();
     if (d.event === "rescue") return h + '<div class="card"><p>岩缝里有人在呼救。</p></div>';
     if (d.enc) return h + encPanel() + logBox();
     const rc = S.returnCost(st);
+    const heavy = S.tooHeavy(st);
+    const dropBtn = S.overweight(st) ? '<button class="btn" data-act="drop">丢下能核，回到负重上限</button>' : "";
+    const heavyNote = heavy ? '<p class="lack">背得太重，走不动了。丢下一些能核，或者归返。</p>' : "";
     if (d.atEnd) {
       if (S.canDescend(st)) {
         const NL = D.LAYERS[d.layer];
-        const after = rc + (D.LAYERS[d.layer - 1].o2Step * D.LAYERS[d.layer - 1].steps - D.LAYERS[d.layer - 1].o2Step * d.step) + NL.o2Step;
-        return h + '<div class="card"><h3>' + L.name + "据点已清</h3><p>往下是" + NL.name + "。下去以后，回程至少要氧气 " + Math.max(after, rc + NL.o2Step) + '。</p><div class="btns col"><button class="btn main" data-act="descend"' + (S.tooHeavy(st) ? " disabled" : "") + ">下到" + NL.name + '</button><button class="btn" data-act="home">' + homeLabel("归返") + "</button></div></div>" + logBox();
+        const after = rc + L.o2Step * (L.steps - d.step) + NL.o2Step;
+        return h + '<div class="card"><h3>' + L.name + "据点已清</h3><p>往下是" + NL.name + "。下去以后，回程至少要氧气 " + Math.max(after, rc + NL.o2Step) + "。</p>" + heavyNote + '<div class="btns col"><button class="btn main" data-act="descend"' + (heavy ? " disabled" : "") + ">下到" + NL.name + "</button>" + dropBtn + '<button class="btn" data-act="home">' + homeLabel("归返") + "</button></div></div>" + logBox();
       }
       return h + '<div class="card"><h3>' + L.name + '据点已清</h3><p>再往下没有路标了。带着收获回去吧。</p><div class="btns"><button class="btn main" data-act="home">' + homeLabel("归返") + "</button></div></div>" + logBox();
     }
     const opts = S.options(st);
     const sc = S.stepCost(st, d.layer);
-    const heavy = S.tooHeavy(st);
-    h += '<div class="card"><h3>' + L.name + " · 第 " + (d.step + 1) + "/" + d.map.length + ' 步</h3><p class="dim">每走一步氧气 -' + sc + (L.special === "fog" ? "（雾中 +1）" : "") + (S.overweight(st) ? "（超重 +1）" : "") + (L.special === "cliff" && S.overweight(st) ? "，超重时可能在峭壁上滑落" : "") + "</p>" + (heavy ? '<p class="lack">背得太重，走不动了。丢下一些能核，或者归返。</p>' : "") + '<div class="nodes">';
+    h += '<div class="card"><h3>' + L.name + " · 第 " + (d.step + 1) + "/" + d.map.length + ' 步</h3><p class="dim">每走一步氧气 -' + sc + (L.special === "fog" ? "（雾中 +1）" : "") + (S.overweight(st) ? "（超重 +1）" : "") + (L.special === "cliff" && S.overweight(st) ? "，超重时可能在峭壁上滑落" : "") + "</p>" + heavyNote + '<div class="nodes">';
     opts.forEach((n, i) => {
       const [name, desc, icon] = nodeText(n, L);
-      const tight = d.o2 - sc < rc + (n.t === "crate" ? 1 : 0) - (n.t === "spring" ? 6 : 0);
-      h += '<button class="node" data-act="node" data-v="' + i + '"' + (heavy ? " disabled" : "") + ">" + ic(icon) + '<span><b>' + esc(name) + "</b><small>" + esc(desc) + "</small>" + (tight ? '<small class="lack">走这一步后，回程氧气不够</small>' : "") + '</span><kbd>' + (i + 1) + "</kbd></button>";
+      const tight = d.o2 - sc < rc + (n.t === "crate" ? 1 : 0) - (n.t === "spring" ? 5 : 0);
+      h += '<button class="node" data-act="node" data-v="' + i + '"' + (heavy ? " disabled" : "") + ">" + ic(icon) + "<span><b>" + esc(name) + "</b><small>" + esc(desc) + "</small>" + (tight ? '<small class="lack">走这一步后，回程氧气不够</small>' : "") + "</span><kbd>" + (i + 1) + "</kbd></button>";
     });
-    h += '</div><div class="btns col">' + (S.overweight(st) ? '<button class="btn" data-act="drop">丢下能核，回到负重上限</button>' : "") + '<button class="btn" data-act="home">' + homeLabel("归返") + "</button></div></div>";
+    h += '</div><div class="btns col">' + dropBtn + '<button class="btn" data-act="home">' + homeLabel("归返") + "</button></div></div>";
     return h + logBox();
   }
   function tactics() {
     let h = "";
     const t = st.dive ? st.dive : st.tactic;
-    if (st.cls.hunter.adv) h += tacRow("猎核者 · 破甲", [["breach:1", "开", t.breach], ["breach:0", "关", !t.breach]], t.breach ? "前 2 轮不攻击；之后全队对最强的敌人伤害 +60%" : "直接攻击");
-    if (st.cls.guard.adv) h += tacRow("护卫者 · 姿态", [["stance:cover", "展开掩护", t.stance === "cover"], ["stance:counter", "机动反击", t.stance === "counter"]], t.stance === "cover" ? "替全队挡下攻击，承伤减半；耐力耗尽转反击" : "自身伤害 ×2.4，被打时反击");
-    if (st.cls.stoker.adv) h += tacRow("御炉者 · 模式", [["mode:lance", "投射", t.mode === "lance"], ["mode:blanket", "压制", t.mode === "blanket"], ["mode:plating", "装甲", t.mode === "plating"]], t.mode === "plating" ? "全队护甲 +4，不烧能核" : (t.mode === "lance" ? "单体伤害高" : "打全部敌人") + "，每轮烧 1 个随身能核");
+    if (st.cls.hunter.adv) h += tacRow("破甲", [["breach:1", "开", t.breach], ["breach:0", "关", !t.breach]], t.breach ? "前 2 轮不攻击，之后全队对最强的敌人伤害 +60%" : "猎核者直接攻击");
+    if (st.cls.guard.adv) h += tacRow("姿态", [["stance:cover", "展开掩护", t.stance === "cover"], ["stance:counter", "机动反击", t.stance === "counter"]], t.stance === "cover" ? "替全队挡下攻击，承伤减半，每挡一次耐力 -1" : "自身伤害 ×2，被打时反击，每轮耐力 +1");
+    if (st.cls.stoker.adv) h += tacRow("模式", [["mode:lance", "投射", t.mode === "lance"], ["mode:blanket", "压制", t.mode === "blanket"], ["mode:plating", "装甲", t.mode === "plating"]], t.mode === "plating" ? "全队护甲 +4，不烧能核" : (t.mode === "lance" ? "单体伤害高" : "打全部敌人") + "，每轮烧 1 个随身能核");
     return h ? '<div class="tac">' + h + "</div>" : "";
   }
   function tacRow(label, items, note) {
     return '<div class="row"><span class="lbl">' + label + '</span><span class="seg">' + items.map(([v, t, on]) => '<button class="chip' + (on ? " on" : "") + '" data-act="tac" data-v="' + v + '">' + t + "</button>").join("") + '</span></div><small class="dim">' + note + "</small>";
   }
+  function fcWord(fc) {
+    return fc.win === 0 ? "打不过" : fc.win < fc.n ? "有可能全队倒下" : fc.cost >= 0.3 ? "能赢，伤得重" : fc.cost >= 0.1 ? "能赢，会掉血" : "稳";
+  }
+  function fcLine(fc) {
+    return "预估：" + fcWord(fc) + "。推演 " + fc.n + " 次胜 " + fc.win + " 次" + (fc.win ? "，生命 -" + Math.round(fc.cost * 100) + "%" : "") + (fc.burned ? "，烧能核 " + fc.burned : "") + "。";
+  }
   function encPanel() {
     const d = st.dive, E = D.ENEMIES[d.enc.e];
     const fc = S.forecast(st);
     const canD = S.canDetour(st);
-    const dCost = 1 + (d.enc.frozen ? 1 : 0);
-    const word = fc.win === 0 ? "打不过" : fc.win < fc.n ? "有可能全队倒下" : fc.cost >= 0.3 ? "能赢，伤得重" : fc.cost >= 0.1 ? "能赢，会掉血" : "稳";
-    const why = d.enc.boss ? "据点首领不能绕行。" : d.enc.hidden ? "拟岩虫封住了路，不能绕行。" : "";
-    let h = '<div class="card enc"><h3>' + esc(E.name) + (d.enc.foes.length > 1 ? " ×" + d.enc.foes.length : "") + '</h3><p class="dim">' + esc(d.enc.boss ? "据点首领：清掉它才能修复这一段补给线" : TRAIT[E.trait]) + "</p>";
-    h += '<div class="btns col"><button class="btn main" data-act="fight">战斗 <kbd>F</kbd></button>';
-    h += '<button class="btn" data-act="detour"' + (canD ? "" : " disabled") + ">绕行（氧气 -" + dCost + (E.trait === "track" ? "，可能甩不掉" : "") + "） <kbd>D</kbd></button>";
-    h += '<button class="btn" data-act="retreat">' + homeLabel("撤退并归返") + " <kbd>R</kbd></button></div>";
-    if (why) h += '<p class="dim">' + why + "</p>";
-    h += "<p>预估：" + word + "。" + fc.n + " 次推演胜 " + fc.win + " 次" + (fc.win ? "，预计损失生命约 " + Math.round(fc.cost * 100) + "%" : "") + "。</p>";
+    const rc = S.returnCost(st), loss = S.homeLoss(st);
+    const why = d.enc.boss ? "不能绕行" : d.enc.hidden ? "路被封住" : "氧气 -" + S.detourCost(st) + (E.trait === "track" ? "，可能甩不掉" : "");
+    let h = '<div class="card enc"><h3>' + esc(E.name) + (d.enc.foes.length > 1 ? " ×" + d.enc.foes.length : "") + '</h3><p class="dim">' + esc(d.enc.boss ? bossNote(d.layer) : d.enc.frozen ? "冰封：没有被伏击，绕行多费 1 氧气" : TRAIT[E.trait]) + "</p>";
+    h += '<p class="' + (fc.win < fc.n ? "lack" : "") + '">' + fcLine(fc) + "</p>";
+    h += '<div class="btns three"><button class="btn main" data-act="fight"><b>战斗</b><small>' + (fc.win ? "生命 -" + Math.round(fc.cost * 100) + "%" : "打不过") + "</small><kbd>F</kbd></button>";
+    h += '<button class="btn" data-act="detour"' + (canD ? "" : " disabled") + "><b>绕行</b><small>" + why + "</small><kbd>D</kbd></button>";
+    h += '<button class="btn" data-act="retreat"><b>撤退并归返</b><small>回程氧气 ' + rc + (loss ? "，丢下约 " + loss + " 个能核" : "") + "</small><kbd>R</kbd></button></div>";
     h += tactics();
     return h + "</div>";
   }
@@ -566,7 +581,8 @@
     let h = "";
     if (st.tide && !st.won) {
       const w = S.TIDE[st.tide.wave], E = D.ENEMIES[w.e];
-      h += '<div class="card tide"><h3>兽潮 · 第 ' + (st.tide.wave + 1) + "/" + S.TIDE.length + " 波</h3><p>" + E.name + " ×" + w.n + "。炉温是防线，失守一波炉温 -3。</p>" + tactics() + '<div class="btns"><button class="btn main" data-act="tide">迎击第 ' + (st.tide.wave + 1) + " 波</button></div></div>";
+      const fc = S.tideForecast(st);
+      h += '<div class="card tide"><h3>兽潮 · 第 ' + (st.tide.wave + 1) + "/" + S.TIDE.length + " 波</h3><p>" + E.name + " ×" + w.n + "。失守一波炉温 -3。炉温每 2 格，守城护甲 +1。御炉者烧库房里的能核。</p>" + '<p class="' + (fc.win < fc.n ? "lack" : "") + '">' + fcLine(fc) + "</p>" + tactics() + '<div class="btns"><button class="btn main" data-act="tide">迎击第 ' + (st.tide.wave + 1) + " 波</button></div></div>";
     }
     if (st.won) h += '<div class="card"><h3>补给线恢复</h3><p class="dim">第一阶段已完成。石灯的补给队定期往返。可以继续下潜、继续建设。</p></div>';
     const maxL = Math.min(st.route + 1, D.LAYERS.length);
@@ -581,6 +597,7 @@
   }
   function hint() {
     if (!st.dives) return "先下到霜根廊看看。能核随身带着，回程会耗氧气，氧气条上的竖线是回程需要的量。";
+    if (!S.routeUnlocked(st) && st.signAt) return "据点清掉了，还不知道旧路怎么走。再下一次霜根廊，走到第 3 步附近仔细找找。";
     if (!S.routeUnlocked(st)) return "霜根廊最深处是据点。清掉它，或者找到熟悉旧路的人，才知道补给线怎么修。";
     const seg = D.ROUTE[st.route];
     if (seg && !st.cleared[seg.layer]) return "修复第 " + (st.route + 1) + " 段补给线，要先清掉" + D.LAYERS[seg.layer - 1].name + "的据点。";
@@ -634,8 +651,9 @@
       h += '<div class="card"><h4>第 ' + (i + 1) + " 段 · " + L.name + "</h4>";
       if (i < st.route) h += '<p>已修复。常规队伍 +' + seg.rate + " 能核/分。</p>";
       else if (i === st.route) {
-        h += "<p>" + (st.cleared[seg.layer] ? "据点已清" : '<span class="lack">据点未清</span>') + " " + cost(seg.need) + "</p>";
-        h += '<div class="btns"><button class="btn main" data-act="repair"' + (S.routeUnlocked(st) && st.cleared[seg.layer] && S.has(st, seg.need) ? "" : " disabled") + ">修复（修好后常规队伍 +" + seg.rate + " 能核/分）</button></div>";
+        const need = S.routeNeed(st, i);
+        h += "<p>" + (st.cleared[seg.layer] ? "据点已清" : '<span class="lack">据点未清</span>') + " " + cost(need) + "</p>" + (i === 0 && st.flags.wei ? '<p class="dim">苇带路，少用能核 15、冻筋 2。</p>' : "");
+        h += '<div class="btns"><button class="btn main" data-act="repair"' + (S.routeUnlocked(st) && st.cleared[seg.layer] && S.has(st, need) ? "" : " disabled") + ">修复（修好后常规队伍 +" + seg.rate + " 能核/分）</button></div>";
       } else h += '<p class="dim">先修好上一段。</p>';
       h += "</div>";
     });
@@ -644,11 +662,11 @@
   function optTab() {
     return (
       '<div class="card"><h3>设置</h3><div class="btns col"><button class="btn" data-act="snd">' + (opt.snd ? "关闭声音" : "打开声音") + '</button><button class="btn" data-act="export">导出存档</button><button class="btn" data-act="import">导入存档</button><button class="btn warn" data-act="reset">重新开始</button></div></div>' +
-      '<div class="card"><h4>操作</h4><p class="dim">数字键 1 到 3 选节点，F 战斗，D 绕行，R 撤退或归返，空格出发或跳过回放。</p><p class="dim">像素字体 Fusion Pixel（SIL OFL 1.1）。</p></div>'
+      '<div class="card"><h4>操作</h4><p class="dim">数字键 1 到 3 选节点，F 战斗，D 绕行，R 撤退或归返，空格出发，或在交战时直接看结果。</p><p class="dim">像素字体 Fusion Pixel（SIL OFL 1.1）。</p></div>'
     );
   }
   function rescueModal() {
-    modal('<h3>呼救</h3><p>岩缝里卡着一个外乡人，腿被冻住了。把她背出来，就得放下一半背着的能核。</p><p class="dim">现在背着能核 ' + st.dive.carry.core + "。</p>" + '<div class="btns col"><button class="btn main" data-act="rescue" data-v="1">放下一半能核，救她</button><button class="btn" data-act="rescue" data-v="0">不停下，继续走</button></div>');
+    modal('<h3>呼救</h3><p>岩缝里卡着一个外乡人，腿被冻住了。把她背出来，就得放下一半背着的能核。</p><p class="dim">现在背着能核 ' + st.dive.carry.core + "，救她要放下 " + Math.ceil(st.dive.carry.core / 2) + "。她像是从路的另一头来的，也许认得旧补给线。</p>" + '<div class="btns col"><button class="btn main" data-act="rescue" data-v="1">放下一半能核，救她</button><button class="btn" data-act="rescue" data-v="0">不停下，继续走</button></div>');
   }
   // 救援按钮在弹窗里：点了要关弹窗
   const _rescue = acts.rescue;
