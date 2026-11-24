@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>万变之种</title>
     <link rel="preload" href="./font.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./style.css?v=3" />
+    <link rel="stylesheet" href="./style.css?v=4" />
   </head>
   <body>
     <div id="app">
@@ -37,10 +37,13 @@
               <div class="bar xp"><i id="xpBar"></i></div>
               <span id="formN" class="lbl form"></span>
             </div>
+            <div class="row carry">
+              <span class="lbl dim">携带</span><img class="px" id="carryIc" alt="DNA" /><span id="carry">0</span><span class="lbl dim">样本</span><span id="carrySp">无</span>
+            </div>
           </div>
           <div id="cvWrap">
             <canvas id="cv"></canvas>
-            <div id="bossBar" hidden><span>领主</span><div class="bar boss"><i id="bossFill"></i></div></div>
+            <div id="bossBar" hidden><span id="bossLbl">领主</span><div class="bar boss"><i id="bossFill"></i></div></div>
             <div id="toast"></div>
             <div id="start"></div>
           </div>
@@ -50,7 +53,7 @@
           <nav id="tabs">
             <button data-tab="build" class="on">本局</button>
             <button data-tab="tree">图鉴</button>
-            <button data-tab="gene">基因</button>
+            <button data-tab="gene">营地</button>
             <button data-tab="opt">设置</button>
           </nav>
           <div id="panel"></div>
@@ -58,11 +61,11 @@
       </main>
       <div id="modal" hidden></div>
     </div>
-    <script src="./data.js?v=3"></script>
-    <script src="./sim.js?v=3"></script>
-    <script src="./audio.js?v=3"></script>
-    <script src="./pixel.js?v=3"></script>
-    <script src="./ui.js?v=3"></script>
+    <script src="./data.js?v=4"></script>
+    <script src="./sim.js?v=4"></script>
+    <script src="./audio.js?v=4"></script>
+    <script src="./pixel.js?v=4"></script>
+    <script src="./ui.js?v=4"></script>
     <script>
       /* 启动失败时的自救界面：不让坏存档把游戏卡死。 */
       if (!window.__evo) {

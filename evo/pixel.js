@@ -274,6 +274,9 @@
     thorn: [".cccccccc.", ".cwwccccc.", ".cwccccdc.", ".cccccddc.", ".ccccdddc.", "..cccddc..", "..ccdddc..", "...cddc...", "....dc....", ".........."],
     dna: [".cc....cc.", "..cc..cc..", "...cwwc...", "..cc..cc..", ".cc....cc.", ".cwwwwwwc.", ".cc....cc.", "..cc..cc..", "...cwwc...", "..cc..cc.."],
     cell: ["...cccc...", "..cwwccc..", ".cwwccccc.", ".cwccccdc.", ".ccccdddc.", ".cccdwwdc.", ".cccdwwdc.", "..ccdddc..", "...cccc...", ".........."],
+    up: ["....cc....", "...cccc...", "..cccccc..", ".cccccccc.", "cccccccccc", "...cccc...", "...cccc...", "...cccc...", "...dddd...", ".........."],
+    down: ["...cccc...", "...cccc...", "...cccc...", "...cccc...", "cccccccccc", ".cccccccc.", "..cccccc..", "...cccc...", "....dd....", ".........."],
+    sample: ["...wwww...", "...w..w...", "...w..w...", "..cw..wc..", "..cccccc..", ".cccwcccc.", ".ccccccwc.", ".cccccccc.", "..dddddd..", ".........."],
     lock: ["...wwww...", "..w....w..", "..w....w..", ".cccccccc.", ".cccccccc.", ".cccwwccc.", ".cccwwccc.", ".cccccccc.", ".dddddddd.", ".........."],
   };
   const iconCache = {};
@@ -343,16 +346,16 @@
     cx = Math.round(cx); cy = Math.round(cy); r = Math.round(r);
     for (let y = -r; y <= r; y++) {
       const w = Math.floor(Math.sqrt(r * r - y * y));
-      for (let x = -w; x <= w; x++) if ((x + y + phase) & 1) c.fillRect(cx + x, cy + y, 1, 1);
+      for (let x = -w; x <= w; x++) if ((x + y * 2 + phase) % 3 === 0) c.fillRect(cx + x, cy + y, 1, 1);
     }
   }
 
   /* 培养皿底图 */
-  let dishCv = null;
-  function dish() {
-    if (dishCv) return dishCv;
-    dishCv = mk(RES, RES);
-    const c = dishCv.getContext("2d");
+  const dishCache = {};
+  function dish(zone) {
+    if (dishCache[zone]) return dishCache[zone];
+    const [cD, cM, cL] = D.ZONES[zone].c;
+    const cv = (dishCache[zone] = mk(RES, RES)), c = cv.getContext("2d");
     c.fillStyle = PAL.night;
     c.fillRect(0, 0, RES, RES);
     for (let y = 0; y < RES; y++)
@@ -361,23 +364,23 @@
         if (d > DISH + 3) continue;
         let col;
         if (d > DISH + 1) col = PAL.ink;
-        else if (d > DISH - 1) col = PAL.dishL;
+        else if (d > DISH - 1) col = cL;
         else if (d > DISH - 3) col = PAL.ink;
         else {
           const k = d / DISH, ch = (x + y) & 1;
-          col = k > 0.86 ? PAL.dishD : k > 0.7 ? (ch ? PAL.dishD : PAL.dish) : k < 0.22 ? (ch ? PAL.dishL : PAL.dish) : PAL.dish;
+          col = k > 0.86 ? cD : k > 0.7 ? (ch ? cD : cM) : k < 0.22 ? (ch ? cL : cM) : cM;
         }
         c.fillStyle = col;
         c.fillRect(x, y, 1, 1);
       }
-    c.fillStyle = PAL.dishL;
+    c.fillStyle = cL;
     for (let i = 0; i < 36; i++) {
       const a = (i / 36) * TAU, L = i % 3 ? 2 : 5;
       for (let k = 0; k < L; k++) c.fillRect(Math.round(C + Math.cos(a) * (DISH - 4 - k)), Math.round(C + Math.sin(a) * (DISH - 4 - k)), 1, 1);
     }
     c.fillStyle = PAL.bruise;
     for (const [x, y] of [[6, 6], [RES - 8, 6], [6, RES - 8], [RES - 8, RES - 8]]) c.fillRect(x, y, 2, 2);
-    return dishCv;
+    return cv;
   }
 
   const parts = [], motes = [];
@@ -449,17 +452,19 @@
     if (calm) shake = flash = hurtT = 0;
     shake = Math.max(0, shake - dt);
     const sx = shake > 0 ? ((Math.random() * 3) | 0) - 1 : 0, sy = shake > 0 ? ((Math.random() * 3) | 0) - 1 : 0;
-    c.drawImage(dish(), sx, sy);
+    const zone = run ? Math.min(D.ZONES.length - 1, Math.floor((Math.floor((run.wave - 1) / D.LAYER)) / 2)) : 0, rising = run && run.asc > 0;
+    c.drawImage(dish(zone), sx, sy);
     c.translate(sx, sy);
     const fi = Math.floor(t * 5) & 3;
 
-    c.fillStyle = PAL.dishL;
+    c.fillStyle = D.ZONES[zone].c[2];
     for (const m of motes) {
-      m.y -= m.s * dt * 3;
+      m.y -= m.s * dt * (rising ? -90 : 3);
       m.x += Math.sin(t * 0.6 + m.p) * dt * 2;
       const dx = m.x - C, dy = m.y - C;
-      if (dx * dx + dy * dy > (DISH - 6) * (DISH - 6)) (m.y = C + Math.abs(dy) - 2), (m.x = C + dx * 0.9);
-      if (Math.sin(t * 1.3 + m.p) > -0.2) c.fillRect(Math.round(m.x), Math.round(m.y), 1, 1);
+      if (dx * dx + dy * dy > (DISH - 6) * (DISH - 6)) (m.y = C + (rising ? -Math.abs(dy) + 2 : Math.abs(dy) - 2)), (m.x = C + dx * 0.9);
+      if (rising) c.fillRect(Math.round(m.x), Math.round(m.y) - 4, 1, 5);
+      else if (Math.sin(t * 1.3 + m.p) > -0.2) c.fillRect(Math.round(m.x), Math.round(m.y), 1, 1);
     }
 
     if (run) {

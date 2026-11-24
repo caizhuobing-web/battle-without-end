@@ -2,7 +2,7 @@
 (function (G) {
   const D = G.EvoData;
   const PR = 14; // 玩家半径
-  const STAT_KEYS = "hp hpPct regen armor dodge dmg atkSpd crit critDmg area proj leech thorns shield xp dna dur physInc poisonInc fireInc lightInc coldInc bloodInc broodInc armorInc poisonCap poisonSpread burnExplode overload chain shatter freeze iceShard minions minionPoison minionSplash symb lowHp overheal hpToDmg execute frenzy soul revive thornPoison dblLight killHeal rerolls startLv choices startSkill apex".split(" ");
+  const STAT_KEYS = "hp hpPct regen armor dodge dmg atkSpd crit critDmg area proj leech thorns shield xp dna dur physInc poisonInc fireInc lightInc coldInc bloodInc broodInc armorInc poisonCap poisonSpread burnExplode overload chain shatter freeze iceShard minions minionPoison minionSplash symb lowHp overheal hpToDmg execute frenzy soul revive thornPoison dblLight killHeal rerolls startLv choices startSkill apex decomp keep".split(" ");
 
   function rnd(run) {
     const a = (run.rs = (run.rs + 0x6d2b79f5) | 0);
@@ -13,8 +13,11 @@
   const lvlMul = (l) => 1 + 0.5 * (l - 1);
   const extra = (l) => (l >= 3 ? 1 : 0) + (l >= 5 ? 1 : 0);
   const need = (l) => (l <= 1 ? 4 : Math.round((3 + 1.6 * l + 0.15 * l * l) * 2.3));
-  const hpMul = (w) => (0.75 + 0.1 * w + 0.024 * w * w) * 0.52;
-  const dmMul = (w) => (0.8 + 0.05 * w + 0.004 * w * w) * 0.56;
+  /* 第 12 波以后叠加指数增长：深度本身就是墙，靠营地强化一层层往下推。 */
+  const deep = (w, k) => Math.pow(k, Math.max(0, w - 12));
+  const hpMul = (w) => (0.75 + 0.1 * w + 0.024 * w * w) * 0.52 * deep(w, 1.07);
+  const layerOf = (w) => Math.floor((w - 1) / D.LAYER) + 1;
+  const dmMul = (w) => (0.8 + 0.05 * w + 0.004 * w * w) * 0.56 * deep(w, 1.045);
 
   function addSt(st, list, n) {
     for (const [k, v] of list) st[k] += v * n;
@@ -65,7 +68,7 @@
       v: 1, diff: run.diff, meta: Object.assign({}, run.meta), rs: run.rs, wave: run.wave, lvl: run.lvl, xp: run.xp, t: run.t,
       hpF: run.hp / run.maxHp, forms: run.forms.slice(), skills: run.skills.map((s) => ({ id: s.id, lvl: s.lvl })),
       muts: Object.assign({}, run.muts), pend: run.pend.slice(), rerolls: run.rerolls, kills: run.kills,
-      bosses: run.bosses, soul: run.soul, revived: run.revived, dmgBy: Object.assign({}, run.dmgBy),
+      bosses: run.bosses, soul: run.soul, loot: run.loot, samples: run.samples.slice(), exitLayer: run.exitLayer, evoDue: run.evoDue, revived: run.revived, dmgBy: Object.assign({}, run.dmgBy),
     };
   }
 
@@ -76,7 +79,7 @@
       diff, rs: seed | 0, meta: Object.assign({}, meta), t: 0, wave: 1, wt: 0, debt: 0, started: 0, bossAlive: false,
       lvl: 1, xp: 0, hp: 1, maxHp: 0, sh: 0, shT: 9, forms: [], skills: [], muts: {}, pend: [], choice: null,
       rerolls: 0, kills: 0, bosses: 0, soul: 0, frenzy: 0, frenzyT: 0, revived: 0, over: null, more: 1, hurtT: 0,
-      biteCd: 0, enemies: [], projs: [], eprojs: [], clouds: [], minions: [], orbA: 0, q: [], fx: [], dmgBy, eid: 1,
+      biteCd: 0, loot: 0, samples: [0, 0, 0, 0], exitLayer: 0, evoDue: false, asc: 0, ascT: 0, enemies: [], projs: [], eprojs: [], clouds: [], minions: [], orbA: 0, q: [], fx: [], dmgBy, eid: 1,
     };
   }
 
@@ -94,6 +97,10 @@
   function restore(snap, meta) {
     const run = blank(snap.meta || meta, snap.diff, snap.rs);
     for (const k of ["wave", "lvl", "xp", "t", "rerolls", "kills", "bosses", "soul", "revived"]) run[k] = snap[k];
+    run.loot = snap.loot || 0;
+    run.exitLayer = snap.exitLayer || 0;
+    run.evoDue = !!snap.evoDue;
+    if (Array.isArray(snap.samples)) run.samples = D.SAMPLES.map((_, i) => snap.samples[i] | 0);
     run.forms = snap.forms.filter((id) => D.FORMS[id]);
     run.skills = snap.skills.filter((s) => D.SKILLS[s.id]).map((s) => ({ id: s.id, lvl: s.lvl, cd: 0 }));
     for (const id in snap.muts) if (D.MUTS[id]) run.muts[id] = snap.muts[id];
@@ -132,6 +139,7 @@
   function makeChoice(run, kind) {
     const n = 3 + run.st.choices;
     let cands = [];
+    if (kind === "exit") return { kind, opts: [{ k: "exit", id: "up" }, { k: "exit", id: "down" }] };
     if (kind === "evo") {
       const tier = run.forms.length + 1;
       const last = run.forms[run.forms.length - 1];
@@ -175,11 +183,20 @@
       else run.skills.push({ id: o.id, lvl: 1, cd: 0 });
     } else if (o.k === "mut") run.muts[o.id] = (run.muts[o.id] || 0) + 1;
     else if (o.k === "form") run.forms.push(o.id);
+    else if (o.k === "exit") {
+      if (o.id === "up") run.asc = run.ascT = ascentTime(run.exitLayer);
+      else if (run.evoDue) run.pend.unshift("evo");
+      run.evoDue = false;
+    }
     run.choice = null;
     recalc(run);
     if (o.k === "form") heal(run, run.maxHp * 0.3);
     return o;
   }
+
+  /* 上浮：越深越久，减压伤害越高（按生命上限的百分比，无视护甲）。 */
+  const ascentTime = (layer) => Math.min(20, 4 + 2 * layer);
+  const ascentStrain = (run, layer) => 0.011 * layer * (1 - Math.min(80, run.st.decomp) / 100);
 
   function reroll(run) {
     if (!run.choice || run.choice.kind !== "mut" || run.rerolls <= 0) return false;
@@ -195,9 +212,10 @@
   }
 
   /* 自动选择。原则：技能位没满时先拿技能；偏好只加分不排除；不拿会减生命上限的变异。 */
-  function autoPick(run, prefs) {
+  function autoPick(run, prefs, cfg) {
     const c = run.choice;
     if (!c) return null;
+    if (c.kind === "exit") return pick(run, run.exitLayer >= ((cfg && cfg.exit) || 3) ? 0 : 1);
     const pf = {}, af = affTags(run), own = ownedTags(run);
     for (const t of prefs || []) pf[t] = 1;
     const w = (t) => (pf[t] ? 1 : af[t] ? 0.75 : 0);
@@ -323,15 +341,22 @@
       }
       if (c) fx(run, { t: "boom", x: e.x, y: e.y, r: 40, tag: "poison" });
     }
+    if (e.elite && rnd(run) < 0.08) {
+      run.samples[Math.max(0, Math.min(D.SAMPLES.length - 1, Math.floor((layerOf(run.wave) - 1) / 2)) - 1)]++;
+      fx(run, { t: "txt", x: e.x, y: e.y - 10, v: "样本" });
+    }
     if (e.split) for (let i = 0; i < 2; i++) spawn(run, "mite", e.x + (i ? 8 : -8), e.y);
     if (e.boss) {
       run.bosses++;
       run.bossAlive = false;
-      if (run.wave >= D.WAVES) run.over = "win";
-      else {
-        run.wt = Math.max(run.wt, D.WAVE_T);
-        if (run.wave === 5 || run.wave === 15) run.pend.push("evo");
-      }
+      const L = layerOf(run.wave);
+      run.exitLayer = L;
+      run.loot += 2 * L * (1 + s.dna / 100);
+      run.samples[Math.min(D.SAMPLES.length - 1, Math.floor((L - 1) / 2))]++;
+      run.evoDue = run.wave === 5 || run.wave === 15;
+      run.wt = Math.max(run.wt, D.WAVE_T);
+      run.pend.push("exit");
+      fx(run, { t: "txt", x: 0, y: -34, v: "第 " + L + " 层已肃清" });
     }
     fx(run, { t: "die", x: e.x, y: e.y, r: e.r, c: e.c, boss: e.boss });
   }
@@ -377,7 +402,7 @@
       x = Math.cos(a) * d;
       y = Math.sin(a) * d;
     }
-    const hp = E.hp * hpMul(w) * df.hp * (elite ? 4 : 1) * (E.boss ? 2 * (1 + w / 10) : 1);
+    const hp = E.hp * hpMul(w) * df.hp * (elite ? 4 : 1) * (E.boss ? 1.6 * (1 + w / 10) : 1);
     const e = {
       id: run.eid++, type, x, y, hp, max: hp, sp: E.sp * (0.72 + rnd(run) * 0.16), dm: E.dm * dmMul(w) * df.dm * (elite ? 1.5 : 1) * (E.boss ? 2 : 1),
       r: E.r * (elite ? 1.35 : 1), xp: E.xp * (elite ? 5 : 1), arm: E.arm || 0, boss: !!E.boss, ranged: !!E.ranged, bomb: !!E.bomb,
@@ -473,13 +498,15 @@
         px = cur.x;
         py = cur.y;
         hit(run, cur, b, "light");
-        b *= 0.88;
+        b *= 0.92;
         let nx = null, nd = 110 * 110;
         for (const e of run.enemies) {
           if (e.dead || seen[e.id]) continue;
           const dx = e.x - px, dy = e.y - py, d = dx * dx + dy * dy;
           if (d < nd) (nd = d), (nx = e);
         }
+        if (!nx && !first.dead && cur !== first) (nx = first), (b *= 0.7);
+        else if (!nx && !first.dead) (nx = first), (b *= 0.6);
         cur = nx;
       }
       return true;
@@ -549,7 +576,24 @@
       run.debt--;
       spawn(run, pickType(run));
     }
-    if (run.wt >= D.WAVE_T && !(bossW && run.bossAlive)) {
+    if (run.asc > 0) {
+      run.debt += (N / D.WAVE_T) * dt;
+      run.asc -= dt;
+      run.hp -= run.maxHp * ascentStrain(run, run.exitLayer) * dt;
+      if (run.hp <= 0) {
+        if (run.revived < s.revive) (run.revived++), (run.hp = run.maxHp * 0.5);
+        else {
+          run.hp = 0;
+          run.over = "dead";
+          return;
+        }
+      }
+      if (run.asc <= 0) {
+        run.over = "out";
+        return;
+      }
+    } else if (run.wt >= D.WAVE_T && !(bossW && run.bossAlive)) {
+      if (!bossW) run.loot += (0.8 + 0.12 * W) * (1 + s.dna / 100);
       run.wave++;
       run.wt = 0;
       run.started = 0;
@@ -737,7 +781,7 @@
   /* 离线结算。hist 为最近几局 {dna, wall}（wall 为真实秒数）；效率打五折；每小时有上限。 */
   function metaTotal() {
     let t = 0;
-    for (const id in D.META) for (let i = 0; i < D.META[id].max; i++) t += Math.round(D.META[id].c * Math.pow(D.META[id].g, i));
+    for (const id in D.META) if (!D.META[id].cur) for (let i = 0; i < D.META[id].max; i++) t += Math.round(D.META[id].c * Math.pow(D.META[id].g, i));
     return t;
   }
   const offlineHourCap = () => Math.floor((metaTotal() * 0.1) / 8);
@@ -749,10 +793,13 @@
     return Math.max(0, Math.floor(Math.min((dna / wall) * sec * 0.5, (offlineHourCap() * sec) / 3600)));
   }
 
+  /* 带回营地的东西：上浮成功全带回；死在井里只带回一部分 DNA，样本全丢。 */
   function dnaOf(run) {
-    const df = D.DIFFS[run.diff];
-    return Math.round(((run.wave - 1) * 1.2 + run.bosses * 5 + (run.over === "win" ? 25 : 0)) * df.dna * (1 + run.st.dna / 100));
+    return Math.floor(run.loot * (run.over === "out" ? 1 : Math.min(1, 0.25 + run.st.keep / 100)));
+  }
+  function samplePoints(run) {
+    return run.over === "out" ? run.samples.reduce((a, n, i) => a + n * D.SAMPLES[i].v, 0) : 0;
   }
 
-  G.EvoSim = { newRun, restore, step, pick, reroll, autoPick, recalc, need, dnaOf, offlineGain, offlineHourCap, metaTotal, hit, spawn, lvlMul, extra, optTag, PR };
+  G.EvoSim = { newRun, restore, step, pick, reroll, autoPick, recalc, need, dnaOf, samplePoints, layerOf, ascentTime, ascentStrain, offlineGain, offlineHourCap, metaTotal, hit, spawn, lvlMul, extra, optTag, PR };
 })(typeof window !== "undefined" ? window : globalThis);
