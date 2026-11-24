@@ -1,4 +1,4 @@
-/* 余烬归途：模拟层。不依赖 DOM，可在 Node 中直接运行做数值测试。
+/* 万丈深渊：模拟层。不依赖 DOM，可在 Node 中直接运行做数值测试。
    所有状态都是可 JSON 序列化的普通对象，存档直接存 state。 */
 (function (G) {
   const D = G.EmberData;

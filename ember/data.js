@@ -1,4 +1,4 @@
-/* 余烬归途：数据表。只放数据，不放逻辑。字段说明见 ember/docs/design.md。 */
+/* 万丈深渊：数据表。只放数据，不放逻辑。字段说明见 ember/docs/design.md。 */
 (function (G) {
   const LAYERS = [
     { id: 1, name: "霜根廊", o2Step: 1, steps: 4, mat: "frostSinew", enemies: ["whiteHyena", "frostRat"], boss: "hyenaMatron", special: "frozen" },

@@ -1,4 +1,4 @@
-/* 余烬归途：无界面回归与平衡测试。
+/* 万丈深渊：无界面回归与平衡测试。
    node tests/ember-sim.js           快速门禁
    node tests/ember-sim.js --report  打印 200 个种子的通关统计
    验收线来自 ember/docs/design.md 第 6 节。 */
