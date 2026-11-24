@@ -3,22 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-    <meta name="theme-color" content="#0a0f14" />
+    <meta name="theme-color" content="#1f1730" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>万变之种</title>
-    <link rel="stylesheet" href="./style.css?v=1" />
+    <link rel="preload" href="./font.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="./style.css?v=2" />
   </head>
   <body>
     <div id="app">
       <header id="top">
-        <div class="brand"><span class="seed"></span>万变之种</div>
-        <div class="res" title="DNA：用于永久基因强化">🧬 <b id="dna">0</b></div>
-        <button id="bAuto" class="chip" title="自动选择变异并自动重开">挂机 关</button>
+        <div class="brand">万变之种</div>
+        <div class="res" title="DNA，用于基因强化"><img class="px" id="dnaIc" alt="DNA" /><span id="dna">0</span></div>
+        <button id="bAuto" class="chip" title="自动选择变异，死亡后自动开始下一局">挂机 关</button>
         <button id="bSpd" class="chip" title="游戏速度">×1</button>
-        <button id="bPause" class="chip ic" title="暂停（空格）">⏸</button>
-        <button id="bSnd" class="chip ic" title="声音">🔊</button>
+        <button id="bPause" class="chip" title="空格键">暂停</button>
+        <button id="bSnd" class="chip">有声</button>
       </header>
       <main>
         <section id="stage">
@@ -47,8 +48,8 @@
         </section>
         <section id="side">
           <nav id="tabs">
-            <button data-tab="build" class="on">战况</button>
-            <button data-tab="tree">进化树</button>
+            <button data-tab="build" class="on">本局</button>
+            <button data-tab="tree">图鉴</button>
             <button data-tab="gene">基因</button>
             <button data-tab="opt">设置</button>
           </nav>
@@ -57,10 +58,10 @@
       </main>
       <div id="modal" hidden></div>
     </div>
-    <script src="./data.js?v=1"></script>
-    <script src="./sim.js?v=1"></script>
-    <script src="./audio.js?v=1"></script>
-    <script src="./render.js?v=1"></script>
-    <script src="./ui.js?v=1"></script>
+    <script src="./data.js?v=2"></script>
+    <script src="./sim.js?v=2"></script>
+    <script src="./audio.js?v=2"></script>
+    <script src="./pixel.js?v=2"></script>
+    <script src="./ui.js?v=2"></script>
   </body>
 </html>

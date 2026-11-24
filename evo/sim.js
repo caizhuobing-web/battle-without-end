@@ -72,7 +72,7 @@
       diff, rs: seed | 0, meta: Object.assign({}, meta), t: 0, wave: 1, wt: 0, debt: 0, started: 0, bossAlive: false,
       lvl: 1, xp: 0, hp: 1, maxHp: 0, sh: 0, shT: 9, forms: [], skills: [], muts: {}, pend: [], choice: null,
       rerolls: 0, kills: 0, bosses: 0, soul: 0, frenzy: 0, frenzyT: 0, revived: 0, over: null, more: 1, hurtT: 0,
-      enemies: [], projs: [], eprojs: [], clouds: [], minions: [], orbA: 0, q: [], fx: [], dmgBy, eid: 1,
+      biteCd: 0, enemies: [], projs: [], eprojs: [], clouds: [], minions: [], orbA: 0, q: [], fx: [], dmgBy, eid: 1,
     };
   }
 
@@ -358,13 +358,13 @@
     const E = D.ENEMIES[type], df = D.DIFFS[run.diff], w = run.wave;
     const elite = !E.boss && type !== "mite" && w >= 12 && rnd(run) < 0.03 + w * 0.002;
     if (x === undefined) {
-      const a = rnd(run) * Math.PI * 2, d = 195 + rnd(run) * 25;
+      const a = rnd(run) * Math.PI * 2, d = 152 + rnd(run) * 10;
       x = Math.cos(a) * d;
       y = Math.sin(a) * d;
     }
     const hp = E.hp * hpMul(w) * df.hp * (elite ? 4 : 1) * (E.boss ? 1 + w / 10 : 1);
     const e = {
-      id: run.eid++, type, x, y, hp, max: hp, sp: E.sp * (0.9 + rnd(run) * 0.2), dm: E.dm * dmMul(w) * df.dm * (elite ? 1.5 : 1),
+      id: run.eid++, type, x, y, hp, max: hp, sp: E.sp * (0.72 + rnd(run) * 0.16), dm: E.dm * dmMul(w) * df.dm * (elite ? 1.5 : 1),
       r: E.r * (elite ? 1.35 : 1), xp: E.xp * (elite ? 5 : 1), arm: E.arm || 0, boss: !!E.boss, ranged: !!E.ranged, bomb: !!E.bomb,
       split: !!E.split, elite, c: E.c, at: rnd(run), psn: 0, psnD: 0, psnT: 0, burn: 0, burnT: 0, chill: 0, frz: 0, oc: 0, dt: rnd(run) * 0.5, dead: false,
     };
@@ -413,17 +413,17 @@
       return true;
     },
     spike(run, sk, m, ex) {
-      const ts = nearest(run, 0, 0, 230, 1 + ex);
+      const ts = nearest(run, 0, 0, 150, 1 + ex);
       if (!ts.length) return false;
       for (let i = 0; i < 1 + ex; i++) {
         const e = ts[i % ts.length];
         const a = Math.atan2(e.y, e.x) + (i >= ts.length ? (i - ts.length + 1) * 0.18 : 0);
-        run.projs.push({ x: 0, y: 0, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, life: 1.1, pierce: 2, base: sk.b * m, hitIds: [] });
+        run.projs.push({ x: 0, y: 0, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, life: 0.6, pierce: 2, base: sk.b * m, hitIds: [] });
       }
       return true;
     },
     spore(run, sk, m, ex) {
-      const ts = nearest(run, 0, 0, 200, 99);
+      const ts = nearest(run, 0, 0, 135, 99);
       if (!ts.length) return false;
       for (let i = 0; i < 1 + ex; i++) {
         const e = ts[Math.floor(rnd(run) * ts.length)];
@@ -448,7 +448,7 @@
       return true;
     },
     arc(run, sk, m, ex) {
-      const first = nearest(run, 0, 0, 210, 1)[0];
+      const first = nearest(run, 0, 0, 145, 1)[0];
       if (!first) return false;
       let cur = first, px = 0, py = 0, b = sk.b * m;
       const seen = {};
@@ -476,7 +476,7 @@
       return true;
     },
     drain(run, sk, m, ex) {
-      const ts = nearest(run, 0, 0, 170, 99);
+      const ts = nearest(run, 0, 0, 140, 99);
       if (!ts.length) return false;
       ts.sort((a, b) => b.hp - a.hp);
       for (const e of ts.slice(0, 1 + ex)) {
@@ -548,6 +548,16 @@
     run.more = (1 + (s.hpToDmg * run.maxHp) / 10000) * (1 + run.soul / 100) * (1 + (s.lowHp / 100) * (1 - run.hp / run.maxHp));
     const haste = Math.max(0.3, 1 + (s.atkSpd + run.frenzy) / 100);
 
+    /* 本能撕咬：不占技能位的基础攻击，保证任何开局都能打 */
+    if ((run.biteCd -= dt * haste) <= 0) {
+      const e = nearest(run, 0, 0, PR + 26, 1)[0];
+      run.biteCd = e ? 0.8 : 0.1;
+      if (e) {
+        fx(run, { t: "slash", x: e.x, y: e.y });
+        hit(run, e, 7 * (1 + run.lvl * 0.08), "phys");
+      }
+    }
+
     /* 技能 */
     let orb = null, brood = null;
     for (const k of run.skills) {
@@ -583,7 +593,7 @@
       mn.cd -= dt * haste;
       let tg = null, td = 1e9;
       for (const e of run.enemies) {
-        if (e.dead || e.x * e.x + e.y * e.y > 150 * 150) continue;
+        if (e.dead || e.x * e.x + e.y * e.y > 140 * 140) continue;
         const dx = e.x - mn.x, dy = e.y - mn.y, d = dx * dx + dy * dy;
         if (d < td) (td = d), (tg = e);
       }
@@ -655,7 +665,7 @@
         e.frz -= dt;
         continue;
       }
-      const d = Math.hypot(e.x, e.y) || 1, stop = e.ranged ? 118 : PR + e.r;
+      const d = Math.hypot(e.x, e.y) || 1, stop = e.ranged ? 105 : PR + e.r;
       if (d > stop) {
         const mv = e.sp * (e.chill > 0 ? 0.6 : 1) * dt;
         e.x -= (e.x / d) * mv;

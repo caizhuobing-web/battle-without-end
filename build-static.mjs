@@ -27,7 +27,7 @@ await mkdir(out, { recursive: true });
 await Promise.all(files.map((file) => cp(path.join(root, file), path.join(out, file))));
 
 // 独立小游戏《万变之种》随主站一并发布到 /evo/，不含内部评审文档。
-const evoFiles = ["index.html", "style.css", "data.js", "sim.js", "audio.js", "render.js", "ui.js"];
+const evoFiles = ["index.html", "style.css", "data.js", "sim.js", "audio.js", "pixel.js", "ui.js", "font.woff2", "FONT-LICENSE.txt"];
 await mkdir(path.join(out, "evo"), { recursive: true });
 await Promise.all(evoFiles.map((file) => cp(path.join(root, "evo", file), path.join(out, "evo", file))));
 
