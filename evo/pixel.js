@@ -381,7 +381,7 @@
   }
 
   const parts = [], motes = [];
-  let shake = 0, flash = 0, hurtT = 0, numSkip = 0;
+  let shake = 0, flash = 0, hurtT = 0, numSkip = 0, calm = false;
   for (let i = 0; i < 22; i++) {
     const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * (DISH - 8);
     motes.push({ x: C + Math.cos(a) * d, y: C + Math.sin(a) * d, s: 0.5 + Math.random(), p: Math.random() * TAU });
@@ -446,6 +446,7 @@
   function draw(c, run, t, dt) {
     c.imageSmoothingEnabled = false;
     c.setTransform(1, 0, 0, 1, 0, 0);
+    if (calm) shake = flash = hurtT = 0;
     shake = Math.max(0, shake - dt);
     const sx = shake > 0 ? ((Math.random() * 3) | 0) - 1 : 0, sy = shake > 0 ? ((Math.random() * 3) | 0) - 1 : 0;
     c.drawImage(dish(), sx, sy);
@@ -614,7 +615,7 @@
     }
 
     c.setTransform(1, 0, 0, 1, 0, 0);
-    const low = run && !run.over && run.hp / run.maxHp < 0.3 && Math.floor(t * 3) & 1;
+    const low = run && !run.over && run.hp / run.maxHp < 0.3 && (calm || Math.floor(t * 3) & 1);
     if (hurtT > 0 || low) {
       hurtT -= dt;
       c.fillStyle = PAL.coral;
@@ -643,5 +644,5 @@
     c.imageSmoothingEnabled = false;
     c.drawImage(f.cv, Math.round((44 - f.s) / 2), Math.round((44 - f.s) / 2));
   }
-  G.EvoRender = { draw, consume, clear, preview, icon, PAL, TAGC, RES, pulse: () => (flash = 0.3) };
+  G.EvoRender = { draw, consume, clear, preview, icon, PAL, TAGC, RES, pulse: () => (flash = 0.3), setCalm: (v) => (calm = !!v) };
 })(window);

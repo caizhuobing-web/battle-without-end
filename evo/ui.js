@@ -7,24 +7,65 @@
   const cv = $("cv"), ctx = cv.getContext("2d");
   cv.width = cv.height = R.RES;
   let save = load(), run = null, paused = false, tab = "build", acc = 0, lastT = 0;
-  let modal = null, peek = false, autoT = 0, restartT = 0, panelT = 0, saveT = 0, sig = "", lastSnap = null, cache = {};
+  let modal = null, peek = false, idleT = 0, autoT = 0, restartT = 0, panelT = 0, saveT = 0, sig = "", lastSnap = null, cache = {};
 
   function fresh() {
-    return { v: 1, dna: 0, meta: {}, diff: 0, diffMax: 0, best: {}, codex: {}, runs: 0, wins: 0, hist: [], opt: { auto: false, prefs: [], speed: 1, snd: true }, snap: null, last: Date.now() };
+    return { v: 1, dna: 0, meta: {}, diff: 0, diffMax: 0, best: {}, codex: {}, runs: 0, wins: 0, hist: [], opt: { auto: false, autoBuy: false, calm: false, prefs: [], speed: 1, snd: true }, snap: null, live: null, wall: 0, last: Date.now() };
   }
-  function adopt(s) {
-    const f = fresh();
-    return Object.assign(f, s, { opt: Object.assign(f.opt, s.opt), meta: Object.assign({}, s.meta), codex: Object.assign({}, s.codex), best: Object.assign({}, s.best), hist: Array.isArray(s.hist) ? s.hist.slice(-5) : [] });
+  function num(v, lo, hi, d) {
+    return typeof v === "number" && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d;
+  }
+  function obj(v) {
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  }
+  /* 读档与导入共用：逐字段校验，任何不合法的值回落到默认值，绝不抛错。 */
+  function sanitize(raw) {
+    const f = fresh(), r = obj(raw), o = obj(r.opt), nD = D.DIFFS.length;
+    f.dna = Math.floor(num(r.dna, 0, 1e9, 0));
+    for (const id in D.META) {
+      const lv = Math.floor(num(obj(r.meta)[id], 0, D.META[id].max, 0));
+      if (lv) f.meta[id] = lv;
+    }
+    f.diffMax = Math.floor(num(r.diffMax, 0, nD - 1, 0));
+    f.diff = Math.floor(num(r.diff, 0, f.diffMax, 0));
+    for (let i = 0; i < nD; i++) {
+      const b = Math.floor(num(obj(r.best)[i], 0, D.WAVES + 1, 0));
+      if (b) f.best[i] = b;
+    }
+    for (const id in D.FORMS) if (obj(r.codex)[id]) f.codex[id] = 1;
+    f.runs = Math.floor(num(r.runs, 0, 1e9, 0));
+    f.wins = Math.floor(num(r.wins, 0, f.runs, 0));
+    if (Array.isArray(r.hist)) for (const h of r.hist.slice(-5)) if (h && num(h.dna, 0, 1e7, -1) >= 0 && num(h.wall, 1, 1e6, 0) > 0) f.hist.push({ dna: h.dna, wall: h.wall });
+    f.opt.auto = o.auto === true;
+    f.opt.autoBuy = o.autoBuy === true;
+    f.opt.calm = o.calm === true;
+    f.opt.snd = o.snd !== false;
+    f.opt.speed = [1, 2, 4].includes(o.speed) ? o.speed : 1;
+    if (Array.isArray(o.prefs)) f.opt.prefs = o.prefs.filter((t, i, arr) => D.TAGS[t] && arr.indexOf(t) === i);
+    const sn = r.snap;
+    if (sn && typeof sn === "object" && Array.isArray(sn.skills) && Array.isArray(sn.forms) && Array.isArray(sn.pend) && num(sn.wave, 1, D.WAVES, 0) && num(sn.diff, 0, nD - 1, -1) >= 0 && num(sn.hpF, 0, 1, -1) >= 0 && typeof sn.muts === "object" && sn.muts && typeof sn.dmgBy === "object" && sn.dmgBy) f.snap = sn;
+    f.live = f.snap && num(obj(r.live).hpF, 0, 1, -1) >= 0 ? { hpF: r.live.hpF } : null;
+    f.wall = num(r.wall, 0, 1e6, 0);
+    f.last = num(r.last, 0, Date.now(), Date.now());
+    return f;
   }
   function load() {
+    let raw = null;
     try {
-      const s = JSON.parse(localStorage.getItem(KEY));
-      if (s && s.v === 1) return adopt(s);
+      raw = localStorage.getItem(KEY);
+      const s = JSON.parse(raw);
+      if (s && s.v === 1) {
+        try {
+          localStorage.setItem(KEY + ".bak", raw);
+        } catch (e) {}
+        return sanitize(s);
+      }
     } catch (e) {}
     return fresh();
   }
   function persist() {
     save.last = Date.now();
+    if (run && !run.over) save.live = { hpF: run.hp / run.maxHp };
     try {
       localStorage.setItem(KEY, JSON.stringify(save));
     } catch (e) {}
@@ -63,8 +104,23 @@
   /* ---------- 对局生命周期 ---------- */
   function startRun(snap) {
     A.unlock();
-    run = snap ? S.restore(snap, save.meta) : S.newRun(save.meta, save.diff, (Math.random() * 2147483647) | 0);
-    if (!snap) save.runs++;
+    if (snap) {
+      try {
+        run = S.restore(snap, save.meta);
+        if (save.live) run.hp = Math.max(1, Math.min(run.hp, run.maxHp * save.live.hpF));
+      } catch (e) {
+        run = null;
+        save.snap = null;
+        persist();
+        showStart();
+        return toast("上一局的记录已损坏，无法继续。请开始新的一局。");
+      }
+    } else {
+      run = S.newRun(save.meta, save.diff, (Math.random() * 2147483647) | 0);
+      save.runs++;
+      save.wall = 0;
+      save.live = null;
+    }
     lastSnap = run.snap;
     save.snap = run.snap;
     R.clear();
@@ -82,7 +138,8 @@
     const win = run.over === "win", dna = S.dnaOf(run);
     save.dna += dna;
     save.snap = null;
-    save.hist.push({ dna, dur: Math.max(30, run.t) });
+    save.hist.push({ dna, wall: Math.max(20, save.wall) });
+    save.live = null;
     if (save.hist.length > 5) save.hist.shift();
     const reach = win ? D.WAVES + 1 : run.wave, best = save.best[run.diff] || 0, newBest = reach > best;
     if (newBest) save.best[run.diff] = reach;
@@ -114,7 +171,7 @@
           <div class="stat"><span>击杀领主</span><b>${run.bosses}</b></div>
         </div>
         <p>${esc(names)}</p>
-        ${unlock ? `<p style="color:var(--amber)">新培养皿已开放：${unlock}</p>` : ""}
+        ${unlock ? `<p style="color:var(--amber)">新培养皿已开放：${unlock}</p><p><button class="btn ghost" data-diff="${save.diffMax}">下一局前往 ${unlock}</button></p>` : ""}
         <p id="cd"></p>
         <div class="rowb" style="justify-content:center">
           <button class="btn" data-act="again">再培养一局</button>
@@ -122,8 +179,9 @@
         </div>
       </div>`,
     );
-    restartT = save.opt.auto ? 4 : 0;
     run = null;
+    if (save.opt.auto && save.opt.autoBuy) autoBuy();
+    restartT = save.opt.auto ? 4 : 0;
     renderPanel();
   }
 
@@ -137,7 +195,8 @@
       <h1>万变之种</h1>
       <p>种子会自动战斗。<br>你来决定它变异成什么，进化成什么。</p>
       ${save.diffMax > 0 ? `<div class="diffs">${diffButtons()}</div>` : ""}
-      ${save.snap ? `<div class="rowb" style="justify-content:center"><button class="btn big" data-act="resume">继续培养</button><button class="btn ghost" data-act="new">放弃并重新开始</button></div><p class="muted" style="margin-top:8px">上一局停在第 ${save.snap.wave} 波</p>` : `<button class="btn big" data-act="new">开始培养</button>`}
+      ${save.snap ? `<div class="rowb" style="justify-content:center"><button class="btn big" data-act="resume">继续培养</button><button class="btn ghost" data-act="new">放弃并重新开始</button></div><p class="muted" style="margin-top:8px">从第 ${save.snap.wave} 波开头继续，生命保持离开时的数值</p>` : `<button class="btn big" data-act="new">开始培养</button>`}
+      <p id="cd0" class="muted" style="margin:8px 0 0"></p>
     </div>`;
   }
 
@@ -158,7 +217,7 @@
   function optInfo(o) {
     if (o.k === "skill") {
       const sk = D.SKILLS[o.id], own = run.skills.find((s) => s.id === o.id), pic = img(o.id, D.TAGS[sk.tag].c);
-      if (!own) return { cls: "", pic, ttl: sk.n, sub: "新技能", dsc: sk.d, tag: sk.tag };
+      if (!own) return { cls: "", pic, ttl: sk.n, sub: "新技能，攻击距离：" + sk.rg, dsc: sk.d, tag: sk.tag };
       const nl = own.lvl + 1, more = nl === 3 || nl === 5 || (o.id === "brood" && (nl === 2 || nl === 4));
       return { cls: "", pic, ttl: sk.n, sub: `技能升级 ${own.lvl} 级 > ${nl} 级`, dsc: `伤害提高到 ${Math.round(S.lvlMul(nl) * 100)}%` + (more ? "，数量 +1" : ""), tag: sk.tag };
     }
@@ -167,7 +226,7 @@
       return { cls: "r" + m.rar, pic: img("cell", m.tag ? D.TAGS[m.tag].c : RARC[m.rar]), ttl: m.n, sub: RAR[m.rar] + (m.max > 1 ? `，已有 ${cur}/${m.max}` : ""), dsc: m.d, tag: m.tag };
     }
     const f = D.FORMS[o.id];
-    return { cls: "fm", pic: `<canvas data-form="${o.id}"></canvas>`, ttl: f.n, sub: `第 ${f.tier} 阶形态` + (save.codex[o.id] ? "" : "，首次遇见"), dsc: f.d, tags: f.aff };
+    return { cls: "fm", pic: `<canvas data-form="${o.id}"></canvas>`, ttl: f.n, sub: `第 ${f.tier} 阶形态` + (save.codex[o.id] ? "" : "，首次遇见"), dsc: f.d + `<br><span class="muted">之后更容易出现${f.aff.map((t) => D.TAGS[t].n).join("、")}的技能与变异</span>`, tags: f.aff };
   }
 
   function showChoice() {
@@ -270,7 +329,8 @@
     const cur = run ? run.forms : [];
     const node = (id) => {
       const f = D.FORMS[id], known = save.codex[id];
-      return `<div class="node t${f.tier} ${cur.includes(id) ? "cur" : ""} ${known ? "" : "un"}"><canvas data-form="${id}"></canvas><div><b>${f.n}</b>${known ? '<span class="ok">已收录</span>' : ""}${f.aff.map(tagChip).join(" ")}<small>${f.d}</small></div></div>`;
+      const open = known || f.tier === 1;
+      return `<div class="node t${f.tier} ${cur.includes(id) ? "cur" : ""} ${known ? "" : "un"}"><canvas data-form="${id}"></canvas><div><b>${open ? f.n : "未收录"}</b>${known ? '<span class="ok">已收录</span>' : ""}${f.aff.map(tagChip).join(" ")}<small>${open ? f.d : "由" + D.FORMS[f.p].n + "进化而来。进化出这个形态后收录。"}</small></div></div>`;
     };
     let h = `<p class="muted">3 个系别，6 个亚种，12 个终极形态。已收录 ${Object.keys(save.codex).length}/${Object.keys(D.FORMS).length}</p><div class="tree">`;
     for (const a of ["A", "B", "C"]) {
@@ -281,6 +341,22 @@
     return h + `</div>`;
   }
 
+  const cleared = () => D.DIFFS.filter((d, i) => save.best[i] > D.WAVES).length;
+  const metaOpen = (id) => (D.META[id].req || 0) <= cleared();
+  function autoBuy() {
+    for (let n = 0; n < 200; n++) {
+      let pick = null, pc = Infinity;
+      for (const id in D.META) {
+        const c = metaCost(id);
+        if (metaOpen(id) && (save.meta[id] || 0) < D.META[id].max && c <= save.dna && c < pc) (pick = id), (pc = c);
+      }
+      if (!pick) break;
+      save.dna -= pc;
+      save.meta[pick] = (save.meta[pick] || 0) + 1;
+      toast("自动购买 " + D.META[pick].n);
+    }
+    persist();
+  }
   const metaCost = (id) => Math.round(D.META[id].c * Math.pow(D.META[id].g, save.meta[id] || 0));
   function panelGene() {
     let h = `<h3>培养皿</h3><div class="tags">${diffButtons()}</div>
@@ -288,6 +364,10 @@
       <h3>基因强化${run ? "（下一局生效）" : ""}</h3><div class="meta">`;
     for (const id in D.META) {
       const m = D.META[id], lv = save.meta[id] || 0, full = lv >= m.max, cost = metaCost(id);
+      if (!metaOpen(id)) {
+        h += `<div class="mrow"><div><b class="muted">${m.n}</b><small>完成 ${m.req} 个培养皿后开放</small></div><button class="btn" disabled>未开放</button></div>`;
+        continue;
+      }
       h += `<div class="mrow"><div><b>${m.n}</b><span class="lv">${lv}/${m.max}</span><small>${m.d}</small></div><button class="btn" data-buy="${id}" ${full || save.dna < cost ? "disabled" : ""}>${full ? "已满级" : dnaImg() + fmt(cost)}</button></div>`;
     }
     return h + `</div>`;
@@ -296,13 +376,15 @@
   function panelOpt() {
     const prefs = Object.keys(D.TAGS).map((t) => `<button class="tag ${save.opt.prefs.includes(t) ? "on" : ""}" style="--tc:${D.TAGS[t].c}" data-pref="${t}">${D.TAGS[t].n}</button>`).join("");
     return `<h3>挂机</h3>
-      <label class="sw"><div>挂机<small>自动选择变异和进化，死亡后自动开始下一局。关掉游戏后，按最近 5 局平均效率的 50% 结算 DNA，最多 8 小时。</small></div><input type="checkbox" data-opt="auto" ${save.opt.auto ? "checked" : ""}></label>
+      <label class="sw"><div>挂机<small>自动选择变异和进化，死亡后自动开始下一局。关掉游戏后，按最近 5 局平均效率的 50% 结算 DNA，每小时最多 ${S.offlineHourCap()}，最多 8 小时。</small></div><input type="checkbox" data-opt="auto" ${save.opt.auto ? "checked" : ""}></label>
+      <label class="sw"><div>挂机时自动购买基因强化<small>每局结束后，从最便宜的开始买。</small></div><input type="checkbox" data-opt="autoBuy" ${save.opt.autoBuy ? "checked" : ""}></label>
       <h3>挂机时优先选择</h3><div class="tags">${prefs}</div><p class="muted" style="margin-top:6px">不选时，跟随当前形态擅长的流派。</p>
-      <h3>声音</h3><label class="sw"><div>音效与音乐</div><input type="checkbox" data-opt="snd" ${save.opt.snd ? "checked" : ""}></label>
+      <h3>声音与画面</h3><label class="sw"><div>音效与音乐</div><input type="checkbox" data-opt="snd" ${save.opt.snd ? "checked" : ""}></label>
+      <label class="sw"><div>减弱闪光与震动<small>关闭全屏闪光、画面震动和低生命红色闪烁。</small></div><input type="checkbox" data-opt="calm" ${save.opt.calm ? "checked" : ""}></label>
       <h3>存档</h3><div class="rowb"><button class="btn ghost" data-act="export">生成存档码</button><button class="btn ghost" data-act="import">读取存档码</button></div>
       <textarea id="io" placeholder="存档码显示在这里。换设备时，把存档码粘贴到这里，再点读取存档码。"></textarea>
       <h3>重置</h3><div class="rowb">${run ? `<button class="btn warn" data-act="quit">放弃本局</button>` : ""}<button class="btn warn" data-act="wipe">删除全部进度</button></div>
-      <p class="muted" style="margin-top:10px">键盘：数字键选择，空格暂停，R 重抽</p>`;
+      <p class="muted" style="margin-top:10px">键盘：数字键选择，空格暂停，R 重抽，结算时回车开始下一局</p>`;
   }
 
   function syncTabs() {
@@ -312,7 +394,7 @@
     const p = $("panel");
     p.innerHTML = { build: panelBuild, tree: panelTree, gene: panelGene, opt: panelOpt }[tab]();
     paintPreviews(p);
-    const can = Object.keys(D.META).some((id) => (save.meta[id] || 0) < D.META[id].max && save.dna >= metaCost(id));
+    const can = Object.keys(D.META).some((id) => metaOpen(id) && (save.meta[id] || 0) < D.META[id].max && save.dna >= metaCost(id));
     document.querySelector('#tabs [data-tab="gene"]').innerHTML = "基因" + (can ? '<i class="dot"></i>' : "");
     const a = $("bAuto");
     a.textContent = save.opt.auto ? "挂机 开" : "挂机 关";
@@ -327,15 +409,13 @@
   function offline() {
     const sec = Math.min(OFFLINE_CAP, (Date.now() - save.last) / 1000);
     save.last = Date.now();
-    if (sec < 90 || !save.opt.auto || !save.hist.length) return;
-    let dna = 0, dur = 0;
-    for (const h of save.hist) (dna += h.dna), (dur += h.dur);
-    const gain = Math.floor((dna / dur) * sec * 0.5);
+    if (sec < 90 || !save.opt.auto) return;
+    const gain = S.offlineGain(save.hist, sec);
     if (gain <= 0) return;
     save.dna += gain;
     persist();
     const hh = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60);
-    if (!modal) openModal("off", `<div class="dlg"><h2>离线培养报告</h2><p>离开了 ${hh ? hh + " 小时 " : ""}${mm} 分钟${sec >= OFFLINE_CAP ? "，已到 8 小时上限" : ""}</p><div class="dna-gain">${dnaImg()}+${fmt(gain)}</div><p>按最近 ${save.hist.length} 局平均效率的 50% 结算</p><button class="btn" data-act="close">收下 DNA</button></div>`);
+    if (!modal) openModal("off", `<div class="dlg"><h2>离线培养报告</h2><p>离开了 ${hh ? hh + " 小时 " : ""}${mm} 分钟${sec >= OFFLINE_CAP ? "，已到 8 小时上限" : ""}</p><div class="dna-gain">${dnaImg()}+${fmt(gain)}</div><p>按最近 ${save.hist.length} 局平均效率的 50% 结算，每小时最多 ${S.offlineHourCap()}</p><button class="btn" data-act="close">收下 DNA</button></div>`);
     else toast("离线获得 DNA +" + fmt(gain));
   }
 
@@ -356,6 +436,7 @@
           }
         } else if (modal !== "choice" && !peek) showChoice();
       } else if (!modal) {
+        save.wall += dt;
         acc += dt * save.opt.speed;
         let n = 0;
         while (acc >= DT && n++ < 10) {
@@ -377,6 +458,12 @@
     R.draw(ctx, run, t, modal === "choice" || paused ? 0 : dt);
     hud();
     if (run && run.over) endRun();
+    if (!run && !modal && save.opt.auto && !document.hidden) {
+      idleT += dt;
+      const cd0 = $("cd0");
+      if (cd0) cd0.textContent = `挂机中，${Math.max(1, Math.ceil(3 - idleT))} 秒后自动${save.snap ? "继续" : "开始"}`;
+      if (idleT >= 3) startRun(save.snap || undefined);
+    } else idleT = 0;
     if (restartT > 0 && modal === "end") {
       restartT -= dt;
       const cd = $("cd");
@@ -431,7 +518,7 @@
     }
     if (d.buy) {
       const cost = metaCost(d.buy);
-      if (save.dna < cost || (save.meta[d.buy] || 0) >= D.META[d.buy].max) return A.sfx("deny");
+      if (!metaOpen(d.buy) || save.dna < cost || (save.meta[d.buy] || 0) >= D.META[d.buy].max) return A.sfx("deny");
       save.dna -= cost;
       save.meta[d.buy] = (save.meta[d.buy] || 0) + 1;
       A.sfx("buy");
@@ -482,13 +569,11 @@
     } else if (act === "import") {
       try {
         const s = JSON.parse(decodeURIComponent(escape(atob($("io").value.trim()))));
-        if (!s || s.v !== 1 || typeof s.dna !== "number" || !isFinite(s.dna) || s.dna < 0 || typeof s.meta !== "object") throw 0;
-        for (const id in s.meta) if (!D.META[id] || !(s.meta[id] >= 0 && s.meta[id] <= D.META[id].max)) delete s.meta[id];
-        s.diffMax = Math.max(0, Math.min(D.DIFFS.length - 1, s.diffMax | 0));
-        s.diff = Math.max(0, Math.min(s.diffMax, s.diff | 0));
-        save = adopt(s);
+        if (!s || typeof s !== "object" || s.v !== 1 || typeof s.dna !== "number") throw 0;
+        save = sanitize(s);
         run = null;
         A.setOn(save.opt.snd);
+        R.setCalm(save.opt.calm);
         persist();
         showStart();
         renderPanel();
@@ -515,6 +600,7 @@
     if (!k) return;
     save.opt[k] = ev.target.checked;
     if (k === "snd") A.setOn(save.opt.snd);
+    if (k === "calm") R.setCalm(save.opt.calm);
     if (k === "auto" && !save.opt.auto) restartT = 0;
     persist();
     renderPanel();
@@ -544,6 +630,13 @@
   };
   document.addEventListener("keydown", (ev) => {
     if (ev.target.tagName === "TEXTAREA") return;
+    if (modal === "end" || modal === "off") {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        modal === "end" ? startRun() : closeModal();
+      }
+      return;
+    }
     if (ev.key >= "1" && ev.key <= "4") choose(+ev.key - 1);
     else if (ev.key === " ") {
       ev.preventDefault();
@@ -565,6 +658,7 @@
 
   $("dnaIc").src = R.icon("dna", R.PAL.amber);
   A.setOn(save.opt.snd);
+  R.setCalm(save.opt.calm);
   showStart();
   offline();
   renderPanel();

@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>万变之种</title>
     <link rel="preload" href="./font.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./style.css?v=2" />
+    <link rel="stylesheet" href="./style.css?v=3" />
   </head>
   <body>
     <div id="app">
@@ -58,10 +58,25 @@
       </main>
       <div id="modal" hidden></div>
     </div>
-    <script src="./data.js?v=2"></script>
-    <script src="./sim.js?v=2"></script>
-    <script src="./audio.js?v=2"></script>
-    <script src="./pixel.js?v=2"></script>
-    <script src="./ui.js?v=2"></script>
+    <script src="./data.js?v=3"></script>
+    <script src="./sim.js?v=3"></script>
+    <script src="./audio.js?v=3"></script>
+    <script src="./pixel.js?v=3"></script>
+    <script src="./ui.js?v=3"></script>
+    <script>
+      /* 启动失败时的自救界面：不让坏存档把游戏卡死。 */
+      if (!window.__evo) {
+        var raw = "";
+        try { raw = localStorage.getItem("evoSeed.save.v1") || ""; } catch (e) {}
+        document.getElementById("app").innerHTML =
+          '<div style="padding:16px;max-width:32em;margin:0 auto"><h3>游戏没能启动</h3><p>可能是存档损坏。可以先复制下面的原始存档留底，再重置存档。</p>' +
+          '<textarea readonly style="height:120px"></textarea><p style="margin-top:10px"><button class="btn" id="rescue">重置存档并重新启动</button></p></div>';
+        document.querySelector("textarea").value = raw;
+        document.getElementById("rescue").onclick = function () {
+          try { localStorage.removeItem("evoSeed.save.v1"); } catch (e) {}
+          location.reload();
+        };
+      }
+    </script>
   </body>
 </html>
