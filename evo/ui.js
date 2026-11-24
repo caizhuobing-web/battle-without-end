@@ -7,7 +7,7 @@
   const cv = $("cv"), ctx = cv.getContext("2d");
   cv.width = cv.height = R.RES;
   let save = load(), run = null, paused = false, tab = "build", acc = 0, lastT = 0;
-  let modal = null, peek = false, idleT = 0, autoT = 0, restartT = 0, panelT = 0, saveT = 0, sig = "", lastSnap = null, cache = {};
+  let modal = null, peek = false, campHold = false, idleT = 0, autoT = 0, restartT = 0, panelT = 0, saveT = 0, sig = "", lastSnap = null, cache = {};
 
   function fresh() {
     return { v: 1, dna: 0, meta: {}, diff: 0, diffMax: 0, best: {}, codex: {}, runs: 0, wins: 0, sp: 0, deep: 0, hist: [], opt: { auto: false, autoBuy: false, calm: false, exit: 2, prefs: [], speed: 1, snd: true }, snap: null, live: null, wall: 0, last: Date.now() };
@@ -46,11 +46,32 @@
     f.opt.exit = Math.floor(num(o.exit, 1, 99, 2));
     if (Array.isArray(o.prefs)) f.opt.prefs = o.prefs.filter((t, i, arr) => D.TAGS[t] && arr.indexOf(t) === i);
     const sn = r.snap;
-    if (sn && typeof sn === "object" && Array.isArray(sn.skills) && Array.isArray(sn.forms) && Array.isArray(sn.pend) && num(sn.wave, 1, 1e5, 0) && num(sn.diff, 0, nD - 1, -1) >= 0 && num(sn.hpF, 0, 1, -1) >= 0 && typeof sn.muts === "object" && sn.muts && typeof sn.dmgBy === "object" && sn.dmgBy) f.snap = sn;
+    if (snapOk(sn)) {
+      const m = {};
+      for (const id in D.META) {
+        const lv = Math.floor(num(obj(sn.meta)[id], 0, D.META[id].max, 0));
+        if (lv) m[id] = lv;
+      }
+      sn.meta = m;
+      f.snap = sn;
+    }
     f.live = f.snap && num(obj(r.live).hpF, 0, 1, -1) >= 0 ? { hpF: r.live.hpF } : null;
     f.wall = num(r.wall, 0, 1e6, 0);
     f.last = num(r.last, 0, Date.now(), Date.now());
     return f;
+  }
+  function snapOk(sn) {
+    if (!sn || typeof sn !== "object" || !Array.isArray(sn.skills) || !Array.isArray(sn.forms) || !Array.isArray(sn.pend)) return false;
+    for (const k of ["wave", "lvl", "xp", "t", "rerolls", "kills", "bosses", "soul", "revived", "hpF"]) if (typeof sn[k] !== "number" || !isFinite(sn[k]) || sn[k] < 0) return false;
+    if (typeof sn.rs !== "number" || !isFinite(sn.rs)) return false;
+    if (sn.wave < 1 || sn.wave > 1e5 || sn.lvl < 1 || sn.lvl > 1e4 || sn.hpF > 1 || sn.forms.length > 3 || sn.skills.length > 4) return false;
+    if (!sn.forms.every((id) => D.FORMS[id]) || sn.pend.length > 50 || !sn.pend.every((k) => ["skill", "mut", "evo", "exit"].includes(k))) return false;
+    if (!sn.skills.every((s) => s && D.SKILLS[s.id] && s.lvl >= 1 && s.lvl <= 5)) return false;
+    if (!sn.muts || typeof sn.muts !== "object" || !Object.keys(sn.muts).every((id) => D.MUTS[id] && sn.muts[id] >= 0 && sn.muts[id] <= D.MUTS[id].max)) return false;
+    if (!sn.dmgBy || typeof sn.dmgBy !== "object" || !Object.keys(D.TAGS).every((t) => typeof sn.dmgBy[t] === "number" && isFinite(sn.dmgBy[t]))) return false;
+    if (sn.loot !== undefined && !(sn.loot >= 0 && sn.loot < 1e9)) return false;
+    if (sn.samples !== undefined && !(Array.isArray(sn.samples) && sn.samples.every((n) => n >= 0 && n < 1e6))) return false;
+    return true;
   }
   function load() {
     let raw = null;
@@ -131,6 +152,7 @@
     R.clear();
     paused = false;
     peek = false;
+    campHold = false;
     restartT = 0;
     closeModal();
     $("start").hidden = true;
@@ -218,7 +240,7 @@
       const L = run.exitLayer;
       if (o.id === "up") {
         const t = S.ascentTime(L), per = S.ascentStrain(run, L) * 100;
-        return { cls: "fm", pic: img("up", R.PAL.amber), ttl: "上浮", sub: `带回全部物资，当前生命 ${Math.round((run.hp / run.maxHp) * 100)}%`, dsc: `上浮需要 ${t} 秒。减压每秒夺走 ${per.toFixed(1)}% 的生命上限，合计约 ${Math.round(per * t)}%。途中敌人仍会出现，回复和吸血照常生效。` };
+        return { cls: "fm", pic: img("up", R.PAL.amber), ttl: "上浮", sub: `带回全部物资，当前生命 ${Math.round((run.hp / run.maxHp) * 100)}%`, dsc: `上浮需要 ${t} 秒。减压每秒夺走 ${per.toFixed(1)}% 的生命上限，合计约 ${Math.round(per * t)}%。途中敌人仍会出现，回复与吸血只有 20% 的效果。` };
       }
       return { cls: "r2", pic: img("down", R.PAL.volt), ttl: "继续下潜", sub: `前往第 ${L + 1} 层，${zoneOf(L + 1).n}`, dsc: `敌人更强，每波 DNA 更多，领主掉落${gradeOf(L + 1).n}样本。死在井里只带回 ${Math.round(Math.min(1, 0.25 + run.st.keep / 100) * 100)}% 的 DNA，样本全丢。` };
     }
@@ -367,10 +389,11 @@
   const wallet = (id) => (D.META[id].cur === "sp" ? "sp" : "dna");
   function autoBuy() {
     for (let n = 0; n < 200; n++) {
-      let pick = null, pc = Infinity;
+      let pick = null, pc = Infinity, pr = Infinity;
       for (const id in D.META) {
         const c = metaCost(id);
-        if (metaOpen(id) && (save.meta[id] || 0) < D.META[id].max && c <= save[wallet(id)] && (pick === null || wallet(id) === "sp" || c < pc) && !(pick && wallet(pick) === "sp" && wallet(id) !== "sp")) (pick = id), (pc = c);
+        const rank = c + (id === "decomp" ? 1e6 : 0);
+        if (metaOpen(id) && (save.meta[id] || 0) < D.META[id].max && c <= save[wallet(id)] && rank < pr) (pick = id), (pc = c), (pr = rank);
       }
       if (!pick) break;
       save[wallet(pick)] -= pc;
@@ -442,7 +465,7 @@
     save.dna += gain;
     persist();
     const hh = Math.floor(sec / 3600), mm = Math.floor((sec % 3600) / 60);
-    if (!modal) openModal("off", `<div class="dlg"><h2>离线培养报告</h2><p>离开了 ${hh ? hh + " 小时 " : ""}${mm} 分钟${sec >= OFFLINE_CAP ? "，已到 8 小时上限" : ""}</p><div class="dna-gain">${dnaImg()}+${fmt(gain)}</div><p>按最近 ${save.hist.length} 局平均效率的 50% 结算，每小时最多 ${S.offlineHourCap()}</p><button class="btn" data-act="close">收下 DNA</button></div>`);
+    if (!modal) openModal("off", `<div class="dlg"><h2>离线下潜报告</h2><p>离开了 ${hh ? hh + " 小时 " : ""}${mm} 分钟${sec >= OFFLINE_CAP ? "，已到 8 小时上限" : ""}</p><div class="dna-gain">${dnaImg()}+${fmt(gain)}</div><p>按最近 ${save.hist.length} 局平均效率的 50% 结算，每小时最多 ${S.offlineHourCap()}</p><button class="btn" data-act="close">收下 DNA</button></div>`);
     else toast("离线获得 DNA +" + fmt(gain));
   }
 
@@ -485,7 +508,7 @@
     R.draw(ctx, run, t, modal === "choice" || paused ? 0 : dt);
     hud();
     if (run && run.over) endRun();
-    if (!run && !modal && save.opt.auto && !document.hidden) {
+    if (!run && !modal && save.opt.auto && !campHold && !document.hidden) {
       idleT += dt;
       const cd0 = $("cd0");
       if (cd0) cd0.textContent = `挂机中，${Math.max(1, Math.ceil(3 - idleT))} 秒后自动${save.snap ? "继续" : "开始"}`;
@@ -559,11 +582,13 @@
     if (d.tip) return toast(d.tip);
     const act = d.act;
     if (act === "new") {
+      if (save.snap && !confirmTwice(el, "再点一次，上一局的物资全部放弃")) return;
       save.snap = null;
       startRun();
     } else if (act === "resume") startRun(save.snap);
     else if (act === "again") startRun();
     else if (act === "gene") {
+      campHold = true;
       restartT = 0;
       closeModal();
       tab = "gene";

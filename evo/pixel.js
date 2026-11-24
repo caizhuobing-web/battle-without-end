@@ -346,7 +346,7 @@
     cx = Math.round(cx); cy = Math.round(cy); r = Math.round(r);
     for (let y = -r; y <= r; y++) {
       const w = Math.floor(Math.sqrt(r * r - y * y));
-      for (let x = -w; x <= w; x++) if ((x + y * 2 + phase) % 3 === 0) c.fillRect(cx + x, cy + y, 1, 1);
+      for (let x = -w; x <= w; x++) if ((x + y * 2 + phase) % 3 === 0 && (cx + x - C) * (cx + x - C) + (cy + y - C) * (cy + y - C) < (DISH - 3) * (DISH - 3)) c.fillRect(cx + x, cy + y, 1, 1);
     }
   }
 

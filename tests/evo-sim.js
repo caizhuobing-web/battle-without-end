@@ -152,6 +152,23 @@ assert.strictEqual(S.offlineGain([{ dna: "x", wall: null }, null], 3600), 0, "�
   assert(S.ascentStrain(probe, 6) > S.ascentStrain(probe, 2));
   assert(S.ascentStrain(probe2, 6) < S.ascentStrain(probe, 6));
   assert(S.ascentTime(8) > S.ascentTime(2));
+  // 减压必须是真实代价（pm-review-r2 的 N1）：强档从第 4 层上浮，实际掉血不低于名义值的四成
+  const ratios = [];
+  for (let i = 0; i < 12; i++) {
+    let h0 = null, lo = 1, nominal = 0;
+    const r = play(40 + i * 53, [], FULL1, 0, {
+      exit: 4,
+      tick: (run) => {
+        if (run.asc > 0) {
+          if (h0 === null) (h0 = run.hp / run.maxHp), (nominal = S.ascentStrain(run, run.exitLayer) * S.ascentTime(run.exitLayer));
+          lo = Math.min(lo, run.hp / run.maxHp);
+        }
+      },
+    });
+    if (h0 !== null) ratios.push(Math.min(1, (h0 - (r.over === "dead" ? 0 : lo)) / Math.min(nominal, h0)));
+  }
+  assert(ratios.length >= 4 && avg(ratios) >= 0.4, "减压实际掉血占名义值的比例过低：" + avg(ratios).toFixed(2) + "，样本 " + ratios.length);
+  if (report) console.log("减压实际掉血占名义值", avg(ratios).toFixed(2), "样本", ratios.length);
 }
 
 /* 9. 营地强化让种子下得更深（慢，--full 才跑） */

@@ -9,14 +9,14 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>万变之种</title>
     <link rel="preload" href="./font.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="./style.css?v=4" />
+    <link rel="stylesheet" href="./style.css?v=5" />
   </head>
   <body>
     <div id="app">
       <header id="top">
         <div class="brand">万变之种</div>
         <div class="res" title="DNA，用于基因强化"><img class="px" id="dnaIc" alt="DNA" /><span id="dna">0</span></div>
-        <button id="bAuto" class="chip" title="自动选择变异，死亡后自动开始下一局">挂机 关</button>
+        <button id="bAuto" class="chip" title="自动选择变异，到设定的层数自动上浮">挂机 关</button>
         <button id="bSpd" class="chip" title="游戏速度">×1</button>
         <button id="bPause" class="chip" title="空格键">暂停</button>
         <button id="bSnd" class="chip">有声</button>
@@ -61,11 +61,11 @@
       </main>
       <div id="modal" hidden></div>
     </div>
-    <script src="./data.js?v=4"></script>
-    <script src="./sim.js?v=4"></script>
-    <script src="./audio.js?v=4"></script>
-    <script src="./pixel.js?v=4"></script>
-    <script src="./ui.js?v=4"></script>
+    <script src="./data.js?v=5"></script>
+    <script src="./sim.js?v=5"></script>
+    <script src="./audio.js?v=5"></script>
+    <script src="./pixel.js?v=5"></script>
+    <script src="./ui.js?v=5"></script>
     <script>
       /* 启动失败时的自救界面：不让坏存档把游戏卡死。 */
       if (!window.__evo) {

@@ -243,6 +243,7 @@
     if (run.fx.length < 160) run.fx.push(o);
   }
   function heal(run, a) {
+    if (run.asc > 0) a *= 0.2;
     run.hp += a;
     if (run.hp > run.maxHp) {
       const ex = run.hp - run.maxHp;
@@ -569,7 +570,7 @@
       if (bossW) spawn(run, "boss");
     }
     run.wt += dt;
-    const N = (18 + 8 * W) * (bossW ? 0.6 : 1);
+    const N = (W <= 3 ? 15 + 8 * W : 20 + 9 * W) * (bossW ? 0.6 : 1);
     if (run.wt < D.WAVE_T) run.debt += (N / D.WAVE_T) * dt;
     else if (bossW && run.bossAlive) run.debt += (N / 40) * dt;
     while (run.debt >= 1 && run.enemies.length < 130) {
@@ -593,7 +594,7 @@
         return;
       }
     } else if (run.wt >= D.WAVE_T && !(bossW && run.bossAlive)) {
-      if (!bossW) run.loot += (0.8 + 0.12 * W) * (1 + s.dna / 100);
+      if (!bossW) run.loot += (1.6 + 0.12 * W) * (1 + s.dna / 100);
       run.wave++;
       run.wt = 0;
       run.started = 0;
@@ -610,11 +611,11 @@
 
     /* 本能撕咬：不占技能位的基础攻击，保证任何开局都能打 */
     if ((run.biteCd -= dt * haste) <= 0) {
-      const e = nearest(run, 0, 0, PR + 26, 1)[0];
-      run.biteCd = e ? 0.8 : 0.1;
-      if (e) {
+      const es = nearest(run, 0, 0, PR + 30, 2);
+      run.biteCd = es.length ? 0.7 : 0.1;
+      for (const e of es) {
         fx(run, { t: "slash", x: e.x, y: e.y });
-        hit(run, e, 7 * (1 + run.lvl * 0.08), "phys");
+        hit(run, e, 8 * (1 + run.lvl * 0.1), "phys");
       }
     }
 
