@@ -719,6 +719,58 @@
         bar(c, HX + 1, y - 4, sp.w - 2, hp / max, PAL.blood);
       }
     }
+    // 战斗表现：行装的出手方式和带着的技艺都画出来
+    if (fx && eid) {
+      const round = view.fight.i, sk = fx.skills || [], hy = ground - 10;
+      const alive = frame.f.map((v, k) => (v > 0 ? k : -1)).filter((k) => k >= 0);
+      const tx = alive.length ? place(eid, alive[0]).x : W - 30;
+      if (sk.includes("smoke") && round <= 3) {
+        c.fillStyle = PAL.frost;
+        for (let j = 0; j < 16; j++) for (let i2 = (j + Math.floor(t * 4)) & 1; i2 < 26; i2 += 2) if ((i2 - 13) * (i2 - 13) + (j - 8) * (j - 8) * 2 < 150) c.fillRect(HX - 6 + i2, ground - 20 + j, 1, 1);
+      }
+      if (sk.includes("brand")) {
+        c.fillStyle = Math.floor(t * 8) % 2 ? PAL.ember : PAL.emberHi;
+        for (const k of alive) {
+          const p = place(eid, k);
+          c.fillRect(p.x + 3 + ((k * 3) % 5), p.y - 1 + (Math.floor(t * 8 + k) % 2), 1, 2);
+        }
+      }
+      if (lt) {
+        if (fx.wear === "hunter") {
+          // 长枪突刺：一条直线扎到最前面的敌人
+          c.fillStyle = PAL.snow;
+          c.fillRect(HX + 14, hy, Math.max(4, tx - HX - 14), 1);
+          c.fillStyle = PAL.hunter;
+          c.fillRect(tx - 2, hy - 1, 3, 3);
+        } else if (fx.wear === "guard") {
+          // 盾击：身前一道弧
+          c.fillStyle = PAL.guard;
+          for (let j = -6; j <= 6; j++) c.fillRect(HX + 18 + Math.round(3 - (j * j) / 12), hy + j, 2, 1);
+        } else if (!fx.plating) {
+          // 炉罐喷火：一片抖动的火舌扫过去
+          for (let i2 = 0; i2 < W - HX - 34; i2++) {
+            const hh = 2 + Math.round((i2 / (W - HX - 34)) * 5);
+            for (let j = -hh; j <= hh; j++) if ((i2 + j + Math.floor(t * 20)) % 2 === 0) {
+              c.fillStyle = Math.abs(j) < hh / 2 ? PAL.emberHi : i2 % 3 ? PAL.ember : PAL.hearth;
+              c.fillRect(HX + 16 + i2, hy + j, 1, 1);
+            }
+          }
+        }
+        if (sk.includes("spear") && round % 2 === 0) {
+          c.fillStyle = PAL.snow;
+          for (let i2 = 0; i2 < tx - HX - 12; i2 += 2) c.fillRect(HX + 12 + i2, hy - 8 + Math.round((i2 / Math.max(1, tx - HX - 12)) * 8), 2, 1);
+        }
+        if (sk.includes("quake") && round % 3 === 0) {
+          c.fillStyle = PAL.snow;
+          for (let i2 = 0; i2 < W - HX - 20; i2 += 6) c.fillRect(HX + 16 + i2, ground + 1 - ((i2 / 6) % 2), 4, 1);
+        }
+      }
+      if (fx.wear === "guard" && lf) {
+        // 架盾挡下攻击：盾面闪一下
+        c.fillStyle = PAL.snow;
+        c.fillRect(HX + 15, hy - 5, 1, 10);
+      }
+    }
     if (s.dive && s.dive.event === "rescue") {
       const sp = teamSpr("wei");
       c.fillStyle = BANDS[1][2];

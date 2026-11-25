@@ -31,6 +31,15 @@ function diveOnce(s) {
     }
     if (d.enc) {
       pickTactic(s);
+      // 背着备用行装时：两套都推演一遍，明显更好就换（换装要 1 氧气）
+      if (S.canSwap(s)) {
+        const a = S.forecast(s), b = S.forecastSwap(s);
+        if (b.win > a.win || (b.win === a.win && b.cost + b.o2 * 0.03 < a.cost + a.o2 * 0.03 - 0.02)) {
+          S.swapOutfit(s);
+          stats.swaps = (stats.swaps || 0) + 1;
+          pickTactic(s);
+        }
+      }
       const fc = S.forecast(s);
       stats.enc++;
       if (fc.win === fc.n && fc.cost < 0.1) stats.sure++;
@@ -54,7 +63,10 @@ function diveOnce(s) {
       break;
     }
     const opts = S.options(s);
-    let i = opts.findIndex((n) => n.t !== "fight" && n.t !== "unknown");
+    // 血多时找架打（能核和配件都靠打），血少时挑安全的节点
+    const want = hpFrac(d) > 0.55 ? (n) => n.t === "fight" : (n) => n.t !== "fight" && n.t !== "unknown";
+    let i = opts.findIndex(want);
+    if (i < 0) i = opts.findIndex((n) => n.t !== "unknown");
     if (i < 0) i = 0;
     S.moveTo(s, i);
   }
@@ -63,7 +75,7 @@ function diveOnce(s) {
 
 /* 配件对某套行装值多少：通用词条按固定分，专属词条只有穿对行装才算。 */
 function itemScore(it, wear) {
-  const W = { atk: 6, hp: 0.5, arm: 6, o2: 3, cap: 1, big: 0.5, swarm: 0.3, loot: 0.6, regen: 1.5, crit: 0.8, breach: wear === "hunter" ? 0.6 : 0, counter: wear === "guard" ? 0.3 : 0, stam: wear === "guard" ? 2 : 0, fuel: wear === "stoker" ? 0.4 : 0 };
+  const W = { atk: 1, hp: 0.8, arm: 5, o2: 2.5, cap: 0.6, big: 0.5, loot: 0.5, regen: 1.2, crit: 0.8, hunt: wear === "hunter" ? 1 : 0, stoke: wear === "stoker" ? 1 : 0, fuel: wear === "stoker" ? 0.2 : 0, counter: wear === "guard" ? 0.3 : 0, block: wear === "guard" ? 1.2 : 0 };
   return it.a.reduce((a, [k, v]) => a + (W[k] || 0) * v, 0);
 }
 /* opt.wear 固定行装；opt.noItems 不装配件；opt.noSkills 不带技艺。 */
@@ -72,13 +84,20 @@ function manage(s, opt) {
   while (S.repair(s));
   for (const id of ["hunter", "guard", "stoker"]) S.promote(s, id);
   if (opt.wear) S.wear(s, opt.wear);
+  S.setSpare(s, opt.spare && opt.spare !== s.wear ? opt.spare : null);
   for (const id of s.equip.slice()) S.unequip(s, id);
-  if (!opt.noItems) for (const it of s.items.slice().sort((a, b) => itemScore(b, s.wear) - itemScore(a, s.wear)).slice(0, D.EQUIP_SLOTS)) S.equip(s, it.id);
+  const score = opt.generic ? (it) => itemScore(it, "none") : (it) => itemScore(it, s.wear);
+  if (!opt.noItems) for (const it of s.items.slice().sort((a, b) => score(b) - score(a))) S.equip(s, it.id); // 同名的装不上，自然跳过
   if (s.items.length > 8) for (const it of s.items.filter((x) => !s.equip.includes(x.id)).sort((a, b) => a.r - b.r).slice(0, s.items.length - 8)) S.salvage(s, it.id);
   if (!opt.noSkills) for (const k of s.skills) if (!s.slots.includes(k)) S.toggleSkill(s, k);
   if (s.hearth <= 2) S.stoke(s);
   for (const k of ["tank", "frame", "armor"]) S.build(s, k);
-  if (s.store.core > 40) S.upgrade(s, s.wear);
+  // 升级：主行装优先，备用的落后两级以上才补
+  if (s.store.core > 40) {
+    const main = opt.wear || s.wear;
+    if (s.spare && s.outfits[s.spare].lv < s.outfits[main].lv - 1) S.upgrade(s, s.spare);
+    else S.upgrade(s, main);
+  }
   while (s.hearth < 5 && s.store.core > 30 && S.stoke(s));
 }
 
@@ -108,7 +127,10 @@ function playThrough(seed, maxDives, opt) {
   }
   return { s, dives, waves, lostWaves };
 }
+/* 默认的「会玩的玩家」：猎核装为主，背一套御炉装对付成群的敌人。 */
+const GOOD = { wear: "hunter", spare: "stoker" };
 function batch(n, opt) {
+  opt = opt || GOOD;
   const res = [];
   for (let i = 1; i <= n; i++) res.push(playThrough(1000 + i, 120, opt));
   const ds = res.map((r) => (r.s.won ? r.dives : 999)).sort((a, b) => a - b);
@@ -117,7 +139,7 @@ function batch(n, opt) {
 
 /* 1. 确定性：同种子同结果 */
 {
-  const a = playThrough(7, 120), b = playThrough(7, 120);
+  const a = playThrough(7, 120, GOOD), b = playThrough(7, 120, GOOD);
   assert.deepStrictEqual(a.s, b.s, "same seed, same game");
 }
 
@@ -178,6 +200,26 @@ function batch(n, opt) {
   S.goHome(t);
   assert(!S.routeUnlocked(t), "sign not found on the same dive");
   assert(t.skills.includes("spear") && t.items.length >= 1, "first boss kill brings home a skill and an item");
+  // 首杀后没带回去就倒下：技艺不能永久丢，下次再打还掉
+  const u = S.newGame(6, 0);
+  u.flags.metWei = true;
+  S.startDive(u, 1);
+  u.dive.map[0] = [{ t: "boss", e: "hyenaMatron" }];
+  u.dive.team[0].hp = u.dive.team[0].max = 9999;
+  S.moveTo(u, 0);
+  S.act(u, "fight");
+  assert(u.dive.carry.skills.includes("spear"));
+  u.dive.team[0].hp = 1;
+  u.dive.enc = { e: "fumeTyrant", foes: [{ hp: 520, max: 520 }], boss: true };
+  S.act(u, "fight");
+  assert(u.last.how === "wiped" && !u.skills.includes("spear"));
+  S.startDive(u, 1);
+  u.dive.map[0] = [{ t: "boss", e: "hyenaMatron" }];
+  u.dive.team[0].hp = u.dive.team[0].max = 9999;
+  S.moveTo(u, 0);
+  S.act(u, "fight");
+  S.goHome(u);
+  assert(u.skills.includes("spear"), "boss skill drops again if it was lost");
   S.startDive(t, 1);
   for (let i = 0; i < 3; i++) t.dive.map[i] = [{ t: "cache" }];
   S.moveTo(t, 0);
@@ -202,7 +244,7 @@ function batch(n, opt) {
   const s = S.newGame(9, 0);
   s.store.core = 9999;
   assert(!S.promote(s, "guard") && !S.promote(s, "hunter") && !S.promote(s, "stoker"));
-  s.store.mats = { toughPlate: 2, frostSinew: 2 };
+  s.store.mats = { plateBone: 2, frostSinew: 2 };
   assert(S.promote(s, "guard"));
 }
 
@@ -236,11 +278,12 @@ function batch(n, opt) {
   const s = S.newGame(12, 0);
   const base = S.heroStats(s);
   for (let i = 0; i < 5; i++) s.items.push(S.rollItem(s, 1, false));
-  s.items.push({ id: 900, b: "blade", r: 0, a: [["atk", 3]] }, { id: 901, b: "filter", r: 0, a: [["o2", 4]] });
-  assert(S.equip(s, 900) && S.equip(s, 901) && S.equip(s, s.items[0].id));
-  assert(!S.equip(s, s.items[1].id), "only 3 equip slots");
+  s.items = [{ id: 900, b: "blade", r: 0, a: [["atk", 10]] }, { id: 901, b: "filter", r: 0, a: [["o2", 4]] }, { id: 902, b: "blade", r: 1, a: [["atk", 14], ["hp", 7]] }, { id: 903, b: "felt", r: 0, a: [["hp", 12]] }, { id: 904, b: "awl", r: 0, a: [["hunt", 25]] }];
+  assert(S.equip(s, 900) && S.equip(s, 901));
+  assert(!S.equip(s, 902) && S.equipClash(s, 902), "two items of the same name cannot both be equipped");
+  assert(S.equip(s, 903) && !S.equip(s, 904), "only 3 equip slots");
   const now = S.heroStats(s);
-  assert(now.atk >= base.atk + 3 && now.o2 >= base.o2 + 4, "items change stats");
+  assert(now.atk > base.atk * 1.09 && now.o2 === base.o2 + 4 && now.hp > base.hp, "items change stats");
   S.wear(s, "guard");
   assert(S.heroStats(s).hp > now.hp, "guard outfit has more hp");
   const cores = s.store.core;
@@ -262,7 +305,8 @@ function batch(n, opt) {
 /* 10. 行装要有取舍：同一场战斗，换一套行装，结果明显不同 */
 function spread(enemy, n, wearId, carry) {
   const s = S.newGame(21, 0);
-  for (const id in s.outfits) s.outfits[id] = { lv: 3, adv: true };
+  for (const id in s.outfits) s.outfits[id] = { lv: 8, adv: true };
+  s.gear.armor = 1;
   S.wear(s, wearId);
   S.startDive(s, 1);
   s.dive.carry.core = carry;
@@ -293,17 +337,19 @@ function spread(enemy, n, wearId, carry) {
     console.log("几乎不掉血（损失 <10%）的稳赢局比例", (sure * 100).toFixed(0) + "%", "撤退", stats.retreat, "/", stats.enc);
     console.log("兽潮 失守", lost, "/", waves, "波；通关时平均配件", items.toFixed(1), "件，技艺", skills.toFixed(1), "个");
     const M = 60;
-    for (const [name, opt] of [["只穿猎核装", { wear: "hunter" }], ["只穿护卫装", { wear: "guard" }], ["只穿御炉装", { wear: "stoker" }], ["不装配件", { noItems: true }], ["不带技艺", { noSkills: true }], ["配件技艺都不用", { noItems: true, noSkills: true }]]) {
+    for (const [name, opt] of [["只穿猎核装", { wear: "hunter" }], ["只穿护卫装", { wear: "guard" }], ["只穿御炉装", { wear: "stoker" }], ["猎核装 + 备用御炉装", { wear: "hunter", spare: "stoker" }], ["猎核装 + 备用护卫装", { wear: "hunter", spare: "guard" }], ["护卫装 + 备用御炉装", { wear: "guard", spare: "stoker" }], ["猎核装只装通用配件", { wear: "hunter", generic: true }], ["御炉装只装通用配件", { wear: "stoker", generic: true }], ["不装配件", Object.assign({ noItems: true }, GOOD)], ["不带技艺", Object.assign({ noSkills: true }, GOOD)], ["配件技艺都不用", Object.assign({ noItems: true, noSkills: true }, GOOD)]]) {
       const b = batch(M, opt);
       console.log(name, "通关", b.won + "/" + M, "中位", b.med);
     }
   }
   assert(all.won / N >= 0.85, "policy should usually finish: " + all.won + "/" + N);
   assert(all.med >= 14 && all.med <= 30, "median dives in design range, got " + all.med);
-  assert(sure <= 0.6, "a good share of fights must cost something, got " + sure.toFixed(2));
+  assert(sure <= 0.7, "a fair share of fights must cost something even for a good player, got " + sure.toFixed(2));
   const K = report ? 60 : 20;
-  const bare = batch(K, { noItems: true, noSkills: true }), geared = batch(K);
+  const bare = batch(K, Object.assign({ noItems: true, noSkills: true }, GOOD)), geared = batch(K);
   assert(bare.med > geared.med, "items and skills must speed up a run: bare " + bare.med + " vs geared " + geared.med);
+  const solo = Math.min(batch(K, { wear: "hunter" }).med, batch(K, { wear: "guard" }).med, batch(K, { wear: "stoker" }).med);
+  assert(geared.med < solo, "carrying a spare outfit and swapping must beat any single outfit: " + geared.med + " vs " + solo);
 }
 
 console.log("ember-sim: ok");

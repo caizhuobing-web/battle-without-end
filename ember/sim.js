@@ -23,6 +23,7 @@
       gear: { tank: 0, armor: 0, frame: 0 },
       outfits: { hunter: { lv: 1, adv: false }, guard: { lv: 1, adv: false }, stoker: { lv: 1, adv: false } },
       wear: "hunter",
+      spare: null, // 备用行装：下潜时背着，遇敌时可以换上
       items: [], // 带回聚落的配件 {id, b 底子, r 品质, a 词条}
       equip: [], // 装着的配件 id，最多 3 件
       skills: [], // 学会的技艺
@@ -60,12 +61,12 @@
     return m;
   }
   const has2 = (s, sk) => s.slots.includes(sk);
-  const stamMax = (s) => 8 + 2 * s.outfits.guard.lv + mods(s).stam; // 护卫装耐力：整次下潜共用，每走一步回 1
+  const stamMax = (s) => 8 + 2 * s.outfits.guard.lv; // 护卫装耐力：整次下潜共用，每走一步回 1
   function heroStats(s) {
     const O = D.OUTFITS[s.wear], lv = s.outfits[s.wear].lv, m = mods(s);
     return {
-      hp: Math.round(O.hp * (1 + 0.15 * (lv - 1)) + m.hp),
-      atk: O.atk * (1 + 0.12 * (lv - 1)) + m.atk,
+      hp: Math.round(O.hp * (1 + 0.1 * (lv - 1)) * (1 + m.hp / 100)),
+      atk: O.atk * (1 + 0.1 * (lv - 1)) * (1 + m.atk / 100),
       arm: O.arm + D.GEAR.armor.levels[s.gear.armor].arm + m.arm,
       o2: D.GEAR.tank.levels[s.gear.tank].o2 + m.o2,
       cap: D.GEAR.frame.levels[s.gear.frame].cap + m.cap,
@@ -77,8 +78,36 @@
   }
   function wear(s, id) {
     if (s.dive || !D.OUTFITS[id]) return false;
+    if (s.spare === id) s.spare = s.wear; // 穿上备用的那套：两套对调
     s.wear = id;
     return true;
+  }
+  function setSpare(s, id) {
+    if (s.dive || (id && (!D.OUTFITS[id] || id === s.wear))) return false;
+    s.spare = id || null;
+    return true;
+  }
+  const canSwap = (s) => !!(s.dive && s.spare && !s.dive.tide);
+  /* 下潜中换上备用行装：生命按比例折算。quiet 为真时只用于预估，不记日志。 */
+  function swapOutfit(s, quiet) {
+    if (!canSwap(s)) return false;
+    const d = s.dive, old = d.team[0], frac = Math.max(0, old.hp) / old.max;
+    const t = s.wear;
+    s.wear = s.spare;
+    s.spare = t;
+    const h = hero(s);
+    h.hp = Math.max(1, Math.round(h.max * frac));
+    d.team[0] = h;
+    if (!quiet) say(s, "换上" + D.OUTFITS[s.wear].name + "。");
+    return true;
+  }
+  /* 换上备用行装后的预估，不改动真实状态。 */
+  function forecastSwap(s) {
+    if (!canSwap(s)) return null;
+    const c = JSON.parse(JSON.stringify(s));
+    c.log = [];
+    swapOutfit(c, true);
+    return forecast(c);
   }
   const itemName = (it) => (it.r ? D.RARITY[it.r].name : "") + D.ITEMS[it.b].name;
   /* 掉一件配件：品质和数值随层数变好，首领必掉精良以上。 */
@@ -95,9 +124,15 @@
     return { id: s.nextId++, b, r, a };
   }
   function equip(s, id) {
-    if (s.dive || s.equip.includes(id) || s.equip.length >= D.EQUIP_SLOTS || !s.items.some((x) => x.id === id)) return false;
+    const it = s.items.find((x) => x.id === id);
+    if (s.dive || !it || s.equip.includes(id) || s.equip.length >= D.EQUIP_SLOTS) return false;
+    if (equipClash(s, id)) return false; // 同名配件只能装一件
     s.equip.push(id);
     return true;
+  }
+  function equipClash(s, id) {
+    const it = s.items.find((x) => x.id === id);
+    return !!it && s.equip.some((e) => e !== id && (s.items.find((x) => x.id === e) || {}).b === it.b);
   }
   function unequip(s, id) {
     if (s.dive || !s.equip.includes(id)) return false;
@@ -122,7 +157,7 @@
 
   /* ---------- 负重与氧气 ---------- */
   function gearWeight(s) {
-    return D.GEAR.tank.levels[s.gear.tank].w + D.GEAR.armor.levels[s.gear.armor].w + D.GEAR.frame.levels[s.gear.frame].w;
+    return D.GEAR.tank.levels[s.gear.tank].w + D.GEAR.armor.levels[s.gear.armor].w + D.GEAR.frame.levels[s.gear.frame].w + (s.spare ? D.SPARE_W : 0);
   }
   const capacity = (s) => heroStats(s).cap;
   function weight(s) {
@@ -162,7 +197,7 @@
       if (l === 2 && s.dive.anchor) c = Math.ceil(c / 2);
       n += c;
     }
-    return n;
+    return n + (n > 0 && overweight(s) ? 2 : 0); // 超重爬回去更费氧
   }
 
   /* ---------- 路线图 ---------- */
@@ -215,6 +250,7 @@
       event: null,
       anchor: false,
       stam: stamMax(s),
+      pilot: s.wear === "stoker" || s.spare === "stoker" ? D.PILOT : 0,
       stance: s.tactic.stance,
       mode: s.tactic.mode,
       breach: s.tactic.breach,
@@ -224,7 +260,7 @@
       s.dive.team[0].hp = Math.round(s.dive.team[0].hp * 0.7);
       say(s, "炉火已熄，没睡暖。出发时生命 -30%。");
     }
-    say(s, "穿着" + D.OUTFITS[s.wear].name + "出发下潜。氧气 " + o2 + "。");
+    say(s, "穿着" + D.OUTFITS[s.wear].name + (s.spare ? "、背着" + D.OUTFITS[s.spare].name : "") + "出发下潜。氧气 " + o2 + "。");
     return s.dive;
   }
 
@@ -358,8 +394,8 @@
      每轮：主角出手，然后每个敌人各攻击一次。生命在一次下潜内不会自己恢复（除非配件或技艺）。
      据点首领每 3 轮重击一次（伤害 ×2.5）。
      行装自带特性：
-       猎核装：只打最强的敌人，伤害 ×1.3；敌人多于 2 个时再 ×0.8。
-       护卫装：每次被打都反击（攻击 ×0.5）。
+       猎核装：只打最强的敌人；对大型敌人（生命 40 以上）伤害 ×1.6；敌人多于 2 个时再 ×0.8。
+       护卫装：每次被打都反击（攻击 ×0.4）。
        御炉装：每轮打全部敌人；每 2 轮烧 1 个随身能核，没有能核时 ×0.4。
      进阶后的战前选择：
        破甲（猎核装）：先花 2 轮研究最强的敌人，之后对它伤害 +60%；大型敌人（生命 40 以上）破甲后击杀，取到完整能核（+4）。
@@ -379,13 +415,19 @@
         enc.switched = (enc.switched || 0) + 1;
       }
     }
-    const arm = h.arm + (s.wear === "stoker" && ad && d.mode === "plating" ? 4 : 0);
+    if (s.wear === "guard") mul *= 1 - M.block / 100;
+    const arm = h.arm + (s.wear === "stoker" && ad && d.mode === "plating" ? 5 : 0);
     h.hp -= Math.max(1, Math.round((raw * mul * 10) / (10 + arm)));
-    if (foe && s.wear === "guard") foe.hp -= h.atk * (ad ? (enc.stance === "counter" ? 0.6 : 0.3) : 0.5) * (1 + M.counter / 100);
+    if (foe && s.wear === "guard") foe.hp -= h.atk * (ad ? (enc.stance === "counter" ? 0.6 : 0.3) : 0.4) * (1 + M.counter / 100);
   }
+  const hasFuel = (d) => d.pilot > 0 || d.carry.core > 0;
   function burn(s) {
     const d = s.dive;
     if (rnd(s) < d.enc.m.fuel / 100) return; // 节核阀：这次不消耗
+    if (d.pilot > 0) {
+      d.pilot--; // 先烧炉罐里的底火
+      return;
+    }
     d.carry.core--;
     d.burned = (d.burned || 0) + 1;
   }
@@ -396,21 +438,22 @@
     const strongest = () => live().reduce((a, b) => (b.hp > a.hp ? b : a));
     enc.round = (enc.round || 0) + 1;
     const many = live().length > 2;
-    const base = (1 + (many ? M.swarm : 0) / 100) * (1 + (E.hp >= BIG ? M.big : 0) / 100) * (rnd(s) < M.crit / 100 ? 2 : 1);
-    const mulOf = (f) => base * (f.breached ? 1.6 + M.breach / 100 : 1);
+    const own = s.wear === "hunter" ? M.hunt : s.wear === "stoker" ? M.stoke : 0; // 专属词条：穿对行装才生效
+    const base = (1 + own / 100) * (1 + (E.hp >= BIG ? M.big : 0) / 100) * (rnd(s) < M.crit / 100 ? 2 : 1);
+    const mulOf = (f) => base * (f.breached ? 1.6 : 1);
     const tgt = strongest();
     if (s.wear === "hunter") {
-      if (ad && d.breach && !tgt.breached) {
+      if (ad && d.breach && E.hp >= BIG && !tgt.breached) { // 只对大型敌人破甲，小的直接打
         tgt.study = (tgt.study || 0) + 1; // 研究两轮才破甲
         if (tgt.study >= 2) tgt.breached = true;
-      } else tgt.hp -= h.atk * 1.3 * (many ? 0.8 : 1) * mulOf(tgt);
+      } else tgt.hp -= h.atk * (E.hp >= BIG ? 1.6 : 1) * (many ? 0.8 : 1) * mulOf(tgt);
     } else if (s.wear === "guard") {
       tgt.hp -= h.atk * (!ad ? 1 : enc.stance === "counter" ? 2 : 0.6) * mulOf(tgt);
     } else {
       const mode = ad ? d.mode : "basic";
-      const fuel = d.carry.core > 0;
+      const fuel = hasFuel(d);
       if (enc.heat >= 6) enc.heat = 0; // 过热停火一轮
-      else if (mode === "plating") tgt.hp -= h.atk * 0.4 * mulOf(tgt);
+      else if (mode === "plating") tgt.hp -= h.atk * 0.8 * mulOf(tgt);
       else if (mode === "basic") {
         if (fuel && enc.round % 2 === 0) burn(s);
         for (const f of live()) f.hp -= h.atk * (fuel ? 1 : 0.4) * mulOf(f);
@@ -467,12 +510,12 @@
       fightRound(s);
       frames.push(snap(d));
     }
-    s.fx = { e: enc.e, boss: !!enc.boss, layer: d.layer, wear: s.wear, max: d.team.map((m) => m.max), frames };
+    s.fx = { e: enc.e, boss: !!enc.boss, layer: d.layer, wear: s.wear, skills: s.slots.slice(), plating: s.wear === "stoker" && s.outfits.stoker.adv && d.mode === "plating", max: d.team.map((m) => m.max), frames };
     if (enc.switched) say(s, "战斗中切换了 " + enc.switched + " 次姿态。");
   }
   /* 战前预估：换 5 个随机种子在副本上各打一遍。返回 {win 胜场数, n 总场数, cost 胜局平均损失的生命比例, burned 平均烧掉的能核}。 */
   function forecast(s) {
-    let win = 0, left = 0, burned = 0;
+    let win = 0, left = 0, burned = 0, rounds = 0;
     const N = 5;
     for (let i = 0; i < N; i++) {
       const c = JSON.parse(JSON.stringify(s));
@@ -484,13 +527,14 @@
       let r = 0;
       while (r++ < MAX_ROUNDS && fighting(d)) fightRound(c);
       burned += c0 - d.carry.core;
+      rounds += d.enc.round || 0;
       if (d.team[0].hp > 0 && !d.enc.foes.some((f) => f.hp > 0)) {
         win++;
         left += d.team[0].hp / d.team[0].max;
       }
     }
     const now = Math.max(0, s.dive.team[0].hp) / s.dive.team[0].max;
-    return { win, n: N, left: win ? left / win : 0, cost: win ? Math.max(0, now - left / win) : now, burned: Math.round(burned / N) };
+    return { win, n: N, left: win ? left / win : 0, cost: win ? Math.max(0, now - left / win) : now, burned: Math.round(burned / N), o2: s.dive.tide || has2(s, "still") ? 0 : Math.floor(rounds / N / D.ROUNDS_PER_O2) };
   }
 
   function fight(s) {
@@ -519,7 +563,7 @@
     // 掉技艺：首领首次击倒必掉，第二层起的普通敌人偶尔掉
     const owned = (k) => s.skills.includes(k) || d.carry.skills.includes(k);
     let sk = null;
-    if (enc.boss && !s.cleared[d.layer] && !owned(D.BOSS_SKILL[d.layer])) sk = D.BOSS_SKILL[d.layer];
+    if (enc.boss && !owned(D.BOSS_SKILL[d.layer])) sk = D.BOSS_SKILL[d.layer]; // 没带回去就倒下的话，下次再打还会掉
     else if (!enc.boss && d.layer >= 2 && rnd(s) < 0.05) {
       const pool = Object.keys(D.SKILLS).filter((k) => !owned(k) && !Object.values(D.BOSS_SKILL).includes(k));
       if (pool.length) sk = pick(s, pool);
@@ -535,7 +579,14 @@
     }
     say(s, "打倒了" + E.name + "。能核 +" + core + got + "。");
     if (enc.m.regen) h.hp = Math.min(h.max, h.hp + enc.m.regen);
-    if (enc.still) d.o2 = Math.min(d.o2Max, d.o2 + 2);
+    if (enc.still) d.o2 = Math.min(d.o2Max, d.o2 + 1);
+    else if (!d.tide) {
+      const used = Math.floor(enc.round / D.ROUNDS_PER_O2); // 久战耗氧
+      if (used) {
+        spendO2(s, used);
+        say(s, "打了 " + enc.round + " 轮，氧气 -" + used + "。");
+      }
+    }
     d.enc = null;
     advance(s);
     return "won";
@@ -638,8 +689,8 @@
     s.gear[kind]++;
     return true;
   }
-  /* 升级行装：生命 +15%、攻击 +12% 每级。炉温低于 3 时工匠停工。 */
-  const upgradeCost = (s, id) => 8 * s.outfits[id].lv;
+  /* 升级行装：生命和攻击各 +10% 每级。炉温低于 3 时工匠停工。 */
+  const upgradeCost = (s, id) => 6 * s.outfits[id].lv;
   function upgrade(s, id) {
     if (s.hearth < 3 || !pay(s, { core: upgradeCost(s, id) })) return false;
     s.outfits[id].lv++;
@@ -683,14 +734,14 @@
 
   /* ---------- 兽潮 ---------- */
   const TIDE = [
-    { e: "whiteHyena", n: 4 },
-    { e: "chorusBat", n: 9 },
+    { e: "whiteHyena", n: 5 },
+    { e: "emberMoth", n: 10 },
     { e: "fumeTyrant", n: 1 },
   ];
   function tideSetup(s) {
     const w = TIDE[s.tide.wave], h = hero(s);
     h.arm += Math.floor(s.hearth / 2); // 炉温是防线：炉温每 2 格，守城护甲 +1
-    s.dive = { layer: 3, step: 0, o2: 99, o2Max: 99, carry: { core: Math.min(20, s.store.core), mats: {}, items: [], skills: [] }, map: [], team: [h], anchor: false, stam: stamMax(s), stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
+    s.dive = { layer: 3, step: 0, pilot: s.wear === "stoker" ? D.PILOT : 0, o2: 99, o2Max: 99, carry: { core: Math.min(20, s.store.core), mats: {}, items: [], skills: [] }, map: [], team: [h], anchor: false, stam: stamMax(s), stance: s.tactic.stance, mode: s.tactic.mode, breach: s.tactic.breach, tide: true };
     s.dive.enc = { e: w.e, foes: Array.from({ length: w.n }, () => ({ hp: D.ENEMIES[w.e].hp, max: D.ENEMIES[w.e].hp })), boss: true };
   }
   function tideForecast(s) {
@@ -725,7 +776,7 @@
     if (s.dive) s.dive[k] = v;
   }
   G.EmberSim = {
-    newGame, mods, heroStats, wear, equip, unequip, salvage, toggleSkill, itemName, rollItem, stamMax,
+    newGame, mods, heroStats, wear, setSpare, canSwap, swapOutfit, forecastSwap, equip, equipClash, unequip, salvage, toggleSkill, itemName, rollItem, stamMax,
     startDive, options, moveTo, rescue, act, canDetour, detourCost, canDescend, descend, goHome, homeLoss, returnCost, stepCost,
     weight, capacity, overweight, tooHeavy, dropToCap, forecast, setTactic,
     stoke, build, upgrade, upgradeCost, promote, repair, routeNeed, routeUnlocked, idleRate, idleTick, tideWave, tideForecast, has, TIDE,

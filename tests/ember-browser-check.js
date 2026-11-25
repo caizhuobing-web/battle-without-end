@@ -43,6 +43,7 @@ async function launch() {
       // 造一场遭遇：第一步只有白鬣
       await p.evaluate(() => {
         __ember.state.dive.map[0] = [{ t: "fight", e: "whiteHyena", n: 1 }];
+        __ember.state.spare = "stoker"; // 带备用行装时遭遇面板最高
         for (const id in __ember.state.outfits) __ember.state.outfits[id].adv = true; // 进阶后有战术区，按最坏情况量
       });
       await p.evaluate(() => document.querySelector("[data-act=tab]") || 0);
@@ -112,7 +113,7 @@ async function launch() {
     await p.click("#modal .btn");
     await p.evaluate(() => {
       const st = __ember.state;
-      st.items.push({ id: 5, b: "awl", r: 1, a: [["breach", 21], ["atk", 2]] });
+      st.items.push({ id: 5, b: "awl", r: 1, a: [["hunt", 35], ["atk", 6]] });
       st.nextId = 6;
       st.skills.push("spear");
       __ember.save();
@@ -121,10 +122,26 @@ async function launch() {
     await p.waitForTimeout(300);
     await p.click("[data-act=tab][data-v=kit]");
     await p.click("[data-act=wear][data-v=guard]");
+    await p.click("[data-act=spare][data-v=stoker]");
+    await p.click("[data-act=kit][data-v=items]");
     await p.click("[data-act=equip][data-v='5']");
+    await p.click("[data-act=kit][data-v=skills]");
     await p.click("[data-act=skill][data-v=spear]");
-    const k = await p.evaluate(() => ({ wear: __ember.state.wear, equip: __ember.state.equip.join(), slots: __ember.state.slots.join(), sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
-    ok("行装页：换行装、装配件、带技艺", k.wear === "guard" && k.equip === "5" && k.slots === "spear" && k.sw === k.cw, JSON.stringify(k));
+    const k = await p.evaluate(() => ({ wear: __ember.state.wear, spare: __ember.state.spare, equip: __ember.state.equip.join(), slots: __ember.state.slots.join(), sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+    ok("行装页：换行装、选备用、装配件、带技艺", k.wear === "guard" && k.spare === "stoker" && k.equip === "5" && k.slots === "spear" && k.sw === k.cw, JSON.stringify(k));
+    // 下潜中换上备用行装，再打一场
+    await p.click("[data-act=tab][data-v=go]");
+    await p.click("[data-act=go]");
+    await p.evaluate(() => {
+      __ember.state.dive.map[0] = [{ t: "fight", e: "frostRat", n: 3 }];
+    });
+    await p.click("[data-act=node]");
+    await p.click("[data-act=swap]");
+    const w2 = await p.evaluate(() => ({ wear: __ember.state.wear, spare: __ember.state.spare, id: __ember.state.dive.team[0].id }));
+    await p.click("[data-act=fight]");
+    await p.waitForTimeout(700);
+    await p.click("[data-act=skip]");
+    ok("下潜中换上备用行装并打一场", w2.wear === "stoker" && w2.spare === "guard" && w2.id === "stoker", JSON.stringify(w2));
     await p.context().close();
   }
   ok("全程无页面报错", errs.length === 0, errs.slice(0, 3).join(" | "));
