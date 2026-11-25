@@ -182,6 +182,9 @@ textarea { width: 100%; height: 96px; background: var(--coal); color: var(--snow
 .nudges .chip { min-height: 26px; padding: 0; text-align: center; }
 .board .cell { width: 56px; height: 56px; background: var(--coal); border: 2px solid var(--rust); box-shadow: inset 0 2px 0 var(--night); display: flex; align-items: center; justify-content: center; }
 .board .cell.win { border-color: var(--emberHi); background: var(--rust); }
+.board .cell.pop { animation: cellpop 0.4s steps(8) both; }
+@keyframes cellpop { 0% { transform: scale(1.35); filter: brightness(4); } 30% { transform: scale(0.92); filter: brightness(1.6); } 60% { transform: scale(1.08); filter: none; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .board .cell.pop { animation: none; } }
 .board .sym { width: 48px; height: 48px; image-rendering: pixelated; }
 .board .roll { width: 24px; height: 24px; background: var(--rust); }
 .msg { min-height: 18px; text-align: center; color: var(--emberHi); }

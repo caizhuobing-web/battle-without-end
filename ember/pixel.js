@@ -676,10 +676,17 @@
 
   const GATE = G.EmberSim ? G.EmberSim.GATE_X : 18, GROUND = FLOOR + 3;
   /* 画一个站在地上的东西：x 是脚下的中点。等级高的画大一号。 */
-  function stand(c, sp, x, yOff, flash, big) {
-    const m = big ? 2 : 1;
-    c.drawImage(flash ? sp.fl : sp.cv, Math.round(x - (sp.w * m) / 2), GROUND - sp.h * m + (yOff || 0), sp.w * m, sp.h * m);
+  function stand(c, sp, x, yOff, flash, big, q) {
+    const m = big ? 2 : 1, w = Math.round(sp.w * m * (q ? 1 + q.s : 1)), h = Math.round(sp.h * m * (q ? 1 - q.s : 1));
+    c.drawImage(flash ? sp.fl : sp.cv, Math.round(x - (q ? q.dx : 0) - w / 2), GROUND - h + (yOff || 0), w, h);
     return sp.h * m;
+  }
+  /* 挨打的反应，只是画面上的：先压扁再弹回原形，同时被顶开一小步。不改战斗里的真实位置。 */
+  function squash(view, i, t) {
+    const a = t - ((view.hitAt && view.hitAt[i]) || -9);
+    if (a < 0 || a > 0.3) return null;
+    const k = 1 - a / 0.3;
+    return { dx: k * k * 3, s: 0.35 * k * Math.cos(a * 34) };
   }
   function lvTag(c, lv, x, top) {
     if (lv > 1) num(c, String(lv), Math.round(x - String(lv).length * 2), top - 7, lv >= 5 ? PAL.emberHi : PAL.snow);
@@ -688,9 +695,10 @@
   /* view 由界面维护：{flash:{序号:到期时间}, fx:[{k,...,t0}], floats, shake}。 */
   function draw(c, s, view, t) {
     c.imageSmoothingEnabled = false;
-    const shake = view.shake > 0 ? Math.round((hash((t * 60) | 0) - 0.5) * view.shake * 4) : 0;
+    // view.shake 是创伤值的平方：零碎的小伤几乎不抖，重击才明显
+    const amp = view.shake > 0 ? view.shake * 7 : 0, tick = (t * 60) | 0;
     c.save();
-    c.translate(shake, 0);
+    c.translate(Math.round((hash(tick) - 0.5) * amp), Math.round((hash(tick + 977) - 0.5) * amp * 0.7));
     const r = s.run;
     if (!r) {
       town(c, s, t);
@@ -719,12 +727,13 @@
         if (e.side !== 1 || e.hp <= 0) return;
         const E = D.ENEMIES[e.k], flap = E.fly ? Math.floor(t * 6 + i) % 2 : 0, sp = foeSpr(e.k, 0, flap);
         const y = GROUND - sp.h - (E.fly ? 16 + (i % 4) * 3 + Math.round(Math.sin(t * 3 + i) * 1.5) : (i % 3) * 2 - bob(i));
-        c.drawImage(view.flash[i] > t ? sp.fl : sp.cv, Math.round(e.x), y);
+        const q = squash(view, i, t), w = q ? Math.round(sp.w * (1 + q.s)) : sp.w, h = q ? Math.round(sp.h * (1 - q.s)) : sp.h;
+        c.drawImage(view.flash[i] > t ? sp.fl : sp.cv, Math.round(e.x + (q ? q.dx : 0) + (sp.w - w) / 2), y + sp.h - h, w, h);
         if (E.big) bar(c, Math.round(e.x) + 1, y - 5, sp.w - 2, e.hp / e.max, PAL.blood);
       });
       f.ents.forEach((e, i) => {
         if (e.side !== 0 || e.hp <= 0) return;
-        const sp = allySpr(e.k), h = stand(c, sp, e.x, (i % 2) * 2 + bob(i), view.flash[i] > t, e.lv >= 10);
+        const sp = allySpr(e.k), h = stand(c, sp, e.x, (i % 2) * 2 + bob(i), view.flash[i] > t, e.lv >= 10, squash(view, i, t));
         if (e.hp < e.max) bar(c, Math.round(e.x - 4), GROUND - h - 4 + (i % 2) * 2, 8, e.hp / e.max, PAL.wei);
         else lvTag(c, e.lv, e.x, GROUND - h + (i % 2) * 2);
       });
@@ -757,6 +766,15 @@
       } else if (e.k === "jab") {
         c.fillStyle = PAL.snow;
         c.fillRect(Math.round(e.x) + 4, GROUND - 7, 5, 1);
+      } else if (e.k === "spark") {
+        // 命中点溅出的火花：顺着挨打的方向飞
+        c.fillStyle = e.big ? PAL.emberHi : PAL.snow;
+        for (let i = 0; i < (e.big ? 6 : 3); i++) c.fillRect(Math.round(e.x + 4 + e.dir * age * (40 + i * 22)), Math.round(GROUND - 5 - i * 2 - age * 30 + age * age * 160), 1, 1);
+      } else if (e.k === "ring") {
+        // 冲击波：一圈往外扩的点
+        const rr = 3 + age * e.r * 4;
+        c.fillStyle = age < 0.1 ? PAL.snow : PAL.emberHi;
+        for (let i = 0; i < 16; i++) c.fillRect(Math.round(e.x + 4 + Math.cos(i * 0.3927) * rr), Math.round(GROUND - 8 + Math.sin(i * 0.3927) * rr * 0.6), 1, 1);
       } else if (e.k === "die") {
         c.fillStyle = e.side ? PAL.foe : PAL.frost;
         for (let i = 0; i < 6; i++) c.fillRect(Math.round(e.x + 4 + Math.cos(i * 1.05) * age * 40), Math.round(GROUND - 6 + Math.sin(i * 1.05) * age * 30), 1, 1);

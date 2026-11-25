@@ -81,7 +81,7 @@
     opt = Object.assign(opt, JSON.parse(localStorage.getItem(OPT) || "{}"));
   } catch (e) {}
   A.set(opt.snd);
-  const view = { flash: {}, fx: [], floats: [], shake: 0, speed: 1, reveal: 3, rolling: false, sel: 0, pend: null, newAt: {}, msg: "" };
+  const view = { flash: {}, hitAt: {}, trauma: 0, stopT: 0, lastStop: -9, pop: 0, hold: false, fx: [], floats: [], shake: 0, speed: 1, reveal: 3, rolling: false, sel: 0, pend: null, newAt: {}, msg: "" };
 
   /* ---------- 画布：整倍放大 ---------- */
   const cv = $("cv"), cx = cv.getContext("2d");
@@ -99,15 +99,16 @@
   fit();
 
   /* ---------- 主循环：固定步长推进战斗，再画一帧 ---------- */
-  let lastMs = 0, acc = 0, sndAt = 0;
+  let lastMs = 0, acc = 0, sndAt = 0, dieAt = 0;
   function frame(ms) {
     const t = ms / 1000, dt = Math.min(0.1, (ms - lastMs) / 1000 || 0);
     lastMs = ms;
-    view.shake = Math.max(0, view.shake - dt * 3);
+    view.trauma = Math.max(0, view.trauma - dt * 1.5);
+    view.shake = view.trauma * view.trauma;
     if (st.run && st.run.phase === "fight") {
-      acc += dt * view.speed;
+      if (t >= view.stopT) acc += dt * view.speed; // 顿帧：停住的这一小会儿战斗不往前走
       let guard = 0;
-      while (acc >= STEP && st.run && st.run.phase === "fight" && guard++ < 10) {
+      while (acc >= STEP && t >= view.stopT && st.run && st.run.phase === "fight" && guard++ < 10) {
         acc -= STEP;
         S.step(st, STEP);
         if (st.run && st.run.fight) drain(st.run.fight, t);
@@ -118,19 +119,45 @@
     P.draw(cx, st, view, t);
     requestAnimationFrame(frame);
   }
+  /* 手感：创伤值（震屏用它的平方）和顿帧。顿帧隔 0.35 秒才能再来一次，免得画面一直卡。 */
+  const jolt = (a) => (view.trauma = Math.min(1, view.trauma + a));
+  function freeze(t, d, force) {
+    if (!force && t - view.lastStop < 0.35) return;
+    view.stopT = t + d;
+    view.lastStop = t;
+  }
   function drain(f, t) {
     for (const e of f.ev) {
       if (e.k === "hit") {
-        view.flash[e.id] = t + 0.08;
+        view.flash[e.id] = t + 0.1;
+        view.hitAt[e.id] = t;
+        jolt(e.side ? (e.big ? 0.15 : 0.03) : 0.05);
+        if (e.big) view.fx.push({ k: "spark", x: e.x, dir: e.side ? 1 : -1, big: 1, t0: t });
         if (e.big || e.v >= 25) view.floats.push({ s: String(e.v), x: e.x + (e.side ? 4 : -4), y: 70 - (view.floats.length % 3) * 6, c: e.side ? (e.big ? P.PAL.emberHi : P.PAL.snow) : P.PAL.blood, t0: t });
         if (t - sndAt > 0.08) {
           sndAt = t;
-          A.play(e.side ? "hit" : "hurt");
+          A.play(e.side ? (e.big ? "hitBig" : "hit") : "hurt");
+          if (!e.big) view.fx.push({ k: "spark", x: e.x, dir: e.side ? 1 : -1, t0: t });
         }
       } else {
         if (e.k === "leak") {
-          view.shake = 1;
+          jolt(0.8);
+          freeze(t, 0.1);
           A.play("warn");
+        } else if (e.k === "die") {
+          if (e.boss) {
+            jolt(1);
+            freeze(t, 0.3, true);
+          } else if (e.big) {
+            jolt(0.55);
+            freeze(t, 0.07);
+          } else jolt(e.side ? 0.08 : 0.4);
+          if (e.big || e.boss) view.fx.push({ k: "ring", x: e.x, r: e.boss ? 60 : 30, t0: t });
+          if (e.big || e.boss || !e.side) A.play("dieBig");
+          else if (t - dieAt > 0.12) {
+            dieAt = t;
+            A.play("die");
+          }
         }
         e.t0 = t;
         view.fx.push(e);
@@ -144,6 +171,8 @@
     view.fx = [];
     view.floats = [];
     view.flash = {};
+    view.hitAt = {};
+    view.stopT = 0;
     if (!st.run) {
       A.play(st.last.how === "won" ? "core" : "warn");
       showResult();
@@ -162,7 +191,12 @@
     for (const id of r.got) view.newAt[id] = t + 1.2;
     const names = r.got.map((id) => r.units.find((u) => u.id === id)).filter(Boolean).map((u) => S.nameOf(u));
     view.msg = res.n ? "中了 " + res.n + " 条线：" + names.join("、") + (r.chain ? "（连账又中 " + r.chain + " 条）" : "") + "。" : res.free ? "没中。回手：这次不收能核。" : "没中。";
-    A.play(res.n ? "core" : "step");
+    const jack = r.got.some((id) => (r.units.find((u) => u.id === id) || {}).k === "relic");
+    if (res.n) {
+      view.pop = t + (jack ? 0.7 : 0.4);
+      jolt(jack ? 1 : 0.45 + 0.15 * Math.min(3, res.n));
+    }
+    A.play(jack ? "jack" : res.n ? "win" : "miss");
     if (r.pick) corePick();
   }
   const impName = (m) => D.IMPRINTS[m.k].name + " " + D.TIER[m.t];
@@ -177,6 +211,7 @@
     const tail = res.got === "up" ? "，印记「" + I.name + "」升到 " + D.TIER[m.t] + " 阶" : res.got === "new" ? "，得到印记「" + impName(m) + "」" : res.got === "swap" ? "，换上印记「" + impName(m) + "」" : res.got === "lv" ? (opt === "skip" ? "，没要印记，多升了 1 级" : "，「" + I.name + "」已是 III 阶，多升了 1 级") : "";
     view.msg = an + "吸收了" + bn + "，升到 " + ea.lv + " 级" + tail + "。";
     view.newAt[ea.id] = now() + 1;
+    jolt(0.3);
     A.play("ok");
     if (r.promo) promoPick();
   }
@@ -199,7 +234,17 @@
       const stop = (n) => setTimeout(() => {
         view.reveal = n;
         A.play("step");
-        if (n === 3) {
+        if (n === 3 && res.n) {
+          // 中了：第三列停下后先憋一小下，再亮线、震屏、出声
+          view.hold = true;
+          setTimeout(() => {
+            view.hold = false;
+            view.rolling = false;
+            afterGain(res);
+            save();
+            render();
+          }, 110);
+        } else if (n === 3) {
           view.rolling = false;
           afterGain(res);
           save();
@@ -402,11 +447,11 @@
     const b = r.board, canN = b && r.nudges > 0 && !view.rolling;
     let h = '<div class="nudges">' + [0, 1, 2].map((c) => '<button class="chip" data-act="nudge" data-v="' + c + '"' + (canN ? "" : " disabled") + ">推</button>").join("") + "</div>";
     const win = new Set();
-    if (b && view.reveal === 3) D.LINES.forEach((L, i) => r.paid[i] && L.forEach((c) => win.add(c)));
+    if (b && view.reveal === 3 && !view.hold) D.LINES.forEach((L, i) => r.paid[i] && L.forEach((c) => win.add(c)));
     h += '<div class="board">';
     for (let i = 0; i < 9; i++) {
       const shown = b && i % 3 < view.reveal;
-      h += '<div class="cell' + (win.has(i) ? " win" : "") + '">' + (shown ? glyph(b[i], "sym") : view.rolling ? '<i class="roll"></i>' : "") + "</div>";
+      h += '<div class="cell' + (win.has(i) ? " win" + (view.pop > now() ? " pop" : "") : "") + '">' + (shown ? glyph(b[i], "sym") : view.rolling ? '<i class="roll"></i>' : "") + "</div>";
     }
     return h + "</div>";
   }

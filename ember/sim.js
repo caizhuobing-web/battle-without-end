@@ -433,7 +433,8 @@
       if (e.hp > 0 || e.dead) continue;
       e.dead = true;
       if (e.leaked) continue;
-      f.ev.push({ k: "die", x: e.x, side: e.side });
+      const DE = e.side === 1 ? D.ENEMIES[e.k] : null;
+      f.ev.push({ k: "die", x: e.x, side: e.side, big: DE && DE.big ? 1 : 0, boss: DE && DE.boss ? 1 : 0 });
       if (e.side === 1) {
         f.kills++;
         f.gotCores += (D.ENEMIES[e.k].core + (e.scav ? 1 : 0)) * (has(r, "bounty") ? 1.5 : 1);
