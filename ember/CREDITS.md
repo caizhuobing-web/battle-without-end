@@ -8,3 +8,7 @@
 其余人物、敌人、聚落、近景、图标均为本项目自绘（字符串像素图，见 `pixel.js`）。
 
 已下载、评估后暂未采用：0x72《16x16 DungeonTileset II》v1.7（CC0，https://0x72.itch.io/dungeontileset-ii ）。
+
+## 玩法参照
+
+玩法结构参照 Slotbound（Optima Arch，2026）的公开资料，详见 `docs/design-v5.md`。没有使用它的名称、角色、美术、文字或数据。

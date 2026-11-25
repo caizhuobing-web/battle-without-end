@@ -1,9 +1,9 @@
 /* 万丈深渊：模拟层。不依赖 DOM，可在 Node 中直接运行做数值测试。
    所有状态都是可 JSON 序列化的普通对象，存档直接存 state。
-   一局：每波先拉拨盘（三格各出一样，同名自动合并升星），然后全队自动打一波。 */
+   一波的流程：拉 3×3 拨盘（连成线才召来帮手）→ 推一格、吸收升级、选核心 → 开打，全队自动守线。 */
 (function (G) {
-  const D = G.EmberData;
-  const HERO_X = 16, SPAWN_X = 190, SNARE_X = 118;
+  const D = G.EmberData, R = D.RULES;
+  const GATE_X = 18, SPAWN_X = 190;
 
   function rnd(s) {
     const a = (s.rs = (s.rs + 0x6d2b79f5) | 0);
@@ -11,219 +11,249 @@
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
+  const pick = (s, arr) => arr[Math.floor(rnd(s) * arr.length)];
 
   function newGame(seed) {
-    return { v: 4, rs: seed | 0, bank: 0, lv: 1, wear: "hunter", best: 0, runs: 0, auto: true, run: null, last: null };
+    return { v: 5, rs: seed | 0, embers: 0, meta: { cap: 0, purse: 0, heart: 0, hound: 0, drum: 0 }, best: 0, runs: 0, run: null, last: null };
   }
-  const upgradeCost = (s) => D.UPGRADE * s.lv;
-  function upgrade(s) {
-    if (s.run || s.bank < upgradeCost(s)) return false;
-    s.bank -= upgradeCost(s);
-    s.lv++;
-    return true;
-  }
-  function wear(s, id) {
-    if (s.run || !D.OUTFITS[id]) return false;
-    s.wear = id;
+  function buy(s, k) {
+    const M = D.META[k];
+    if (s.run || !M || s.meta[k] >= M.max || s.embers < M.cost) return false;
+    s.embers -= M.cost;
+    s.meta[k]++;
     return true;
   }
 
   /* ---------- 一局 ---------- */
-  const star = (r, t, k) => {
-    const it = r.items.find((x) => x.t === t && x.k === k);
-    return it ? it.star : 0;
-  };
-  function heroStats(s) {
-    const r = s.run, O = D.OUTFITS[r ? r.wear : s.wear], g = (k) => (r ? star(r, "g", k) : 0), up = 1 + 0.1 * (s.lv - 1);
-    return {
-      max: Math.round(O.hp * up * (1 + 0.3 * g("felt"))),
-      atk: O.atk * up * (1 + 0.3 * g("blade")),
-      cd: O.cd / (1 + 0.2 * g("grip")),
-      ultCd: O.ultCd * Math.max(0.4, 1 - 0.2 * g("wire")),
-      range: O.range,
-    };
-  }
+  const has = (r, c) => r.own.includes(c);
+  const capOf = (s) => R.cap + s.meta.cap + (has(s.run, "camp") ? 1 : 0);
+  const symbolsOf = (s) => D.SYMBOLS.filter((k) => (k !== "hound" && k !== "drum") || s.meta[k]);
   function startRun(s) {
     if (s.run) throw new Error("run in progress");
-    s.run = { wear: s.wear, wave: 0, cores: 0, hp: 0, items: [], reel: null, spins: 0, phase: "spin", fight: null, ultT: 0 };
-    s.run.hp = heroStats(s).max;
+    const hearts = R.hearts + s.meta.heart;
+    s.run = { wave: 0, cores: R.startCores + 15 * s.meta.purse, hearts, heartsMax: hearts, units: [], nextId: 1, board: null, paid: null, jack: false, got: [], spins: 0, total: 0, nudges: R.nudges, own: [], pick: null, promo: null, phase: "prep", fight: null };
     s.runs++;
     return s.run;
   }
-
-  /* 拨盘里的东西和权重。行装偏向的种类权重 ×3。 */
-  function pool(s) {
-    const bias = D.OUTFITS[s.run.wear].bias, out = [];
-    const add = (t, tbl) => {
-      for (const k in tbl) out.push({ t, k, w: bias.includes(k) ? 3 : 1 });
-    };
-    add("u", D.UNITS);
-    add("g", D.GEAR);
-    add("s", D.SKILLS);
-    return out;
+  function rollSym(s) {
+    if (rnd(s) < R.jokerRate * (has(s.run, "wild") ? 3 : 1)) return "joker";
+    return pick(s, symbolsOf(s));
   }
-  function roll(s) {
-    const p = pool(s), total = p.reduce((a, x) => a + x.w, 0);
-    let q = rnd(s) * total;
-    for (const x of p) if ((q -= x.w) < 0) return { t: x.t, k: x.k };
-    return { t: p[0].t, k: p[0].k };
-  }
-  /* 拿到一样东西：同名合并升星；满三星或放不下就换成 3 个能核。返回 new / up / core。 */
-  function gain(s, it) {
-    const r = s.run, have = r.items.find((x) => x.t === it.t && x.k === it.k);
-    if (have) {
-      if (have.star < 3) {
-        have.star++;
-        if (it.k === "felt") r.hp += Math.round(D.OUTFITS[r.wear].hp * (1 + 0.1 * (s.lv - 1)) * 0.3);
-        return "up";
-      }
-      r.cores += 3;
-      return "core";
+  /* 一条线上三格相同（百搭可以顶任何一种）就返回那个兵种；三格全是百搭返回 joker。 */
+  function lineSym(board, L) {
+    let k = null;
+    for (const i of L) {
+      const c = board[i];
+      if (c === "joker") continue;
+      if (k && c !== k) return null;
+      k = c;
     }
-    const skills = r.items.filter((x) => x.t === "s").length, body = r.items.length - skills;
-    if (it.t === "s" ? skills >= D.SKILL_SLOTS : body >= D.BAG) {
-      r.cores += 3;
-      return "core";
-    }
-    r.items.push({ t: it.t, k: it.k, star: 1 });
-    if (it.k === "felt") r.hp += Math.round(D.OUTFITS[r.wear].hp * (1 + 0.1 * (s.lv - 1)) * 0.3);
-    return "new";
+    return k || "joker";
   }
-  /* 每波第一次拉免费，之后第 n 次加拉花 4×n 能核。 */
-  const spinCost = (s) => (s.run.spins === 0 ? 0 : D.SPIN_COST * s.run.spins);
+  function summon(s, k) {
+    const r = s.run;
+    if (k === "joker") k = pick(s, symbolsOf(s));
+    const u = { id: r.nextId++, k, lv: has(r, "drill") && k !== "relic" ? 2 : 1, sub: null };
+    r.units.push(u);
+    r.got.push(u.id);
+    return u;
+  }
+  /* 结算盘面：没付过的中线各召来一个帮手；九格全中再唤醒一个古件卫。 */
+  function evaluate(s) {
+    const r = s.run;
+    let n = 0;
+    D.LINES.forEach((L, i) => {
+      const k = lineSym(r.board, L);
+      if (!k) return void (r.paid[i] = false);
+      if (r.paid[i]) return;
+      r.paid[i] = true;
+      summon(s, k);
+      n++;
+    });
+    if (!r.jack && r.paid.every(Boolean)) {
+      r.jack = true;
+      summon(s, "relic");
+      n++;
+    }
+    return n;
+  }
+  const spinCost = (s) => Math.max(1, R.spinBase + R.spinStep * s.run.spins - (has(s.run, "cheap") ? 3 : 0));
+  /* 现在为什么不能拉：返回原因，能拉返回空串。 */
+  function spinBlock(s) {
+    const r = s.run;
+    if (!r || r.phase !== "prep") return "不在备战";
+    if (r.pick) return "先选一个核心";
+    if (r.promo) return "先选晋升";
+    if (r.units.length > capOf(s)) return "队伍超员，先让帮手吸收";
+    if (r.spins >= R.spinsPerWave) return "这一波的 " + R.spinsPerWave + " 次已经拉完";
+    if (r.cores < spinCost(s)) return "能核不够";
+    return "";
+  }
   function spin(s) {
     const r = s.run;
-    if (!r || r.phase !== "spin") return null;
-    const c = spinCost(s);
-    if (r.cores < c) return null;
-    r.cores -= c;
+    if (spinBlock(s)) return null;
+    r.cores -= spinCost(s);
+    r.board = Array.from({ length: 9 }, () => rollSym(s));
+    if (r.total === 0) r.board[3] = r.board[4] = r.board[5] = pick(s, ["bow", "spear"]); // 每局第一次必中中间一行，不让开局空手
+    r.paid = D.LINES.map(() => false);
+    r.jack = false;
+    r.got = [];
+    let n = evaluate(s);
+    r.chain = 0;
+    if (n && has(r, "ledger")) {
+      // 连账：中线的格子清掉补新的，再结算一次
+      const hitCells = new Set();
+      D.LINES.forEach((L, i) => r.paid[i] && L.forEach((c) => hitCells.add(c)));
+      for (const c of hitCells) r.board[c] = rollSym(s);
+      r.paid = D.LINES.map(() => false);
+      r.jack = true; // 补出来的不再算九格全中
+      r.chain = evaluate(s);
+      n += r.chain;
+    }
     r.spins++;
-    r.reel = [0, 1, 2].map(() => {
-      const it = roll(s);
-      return { t: it.t, k: it.k, got: gain(s, it) };
+    r.total++;
+    if (r.total % R.coreEvery === 0) {
+      const left = Object.keys(D.CORES).filter((c) => !has(r, c));
+      r.pick = [];
+      while (r.pick.length < 3 && left.length) r.pick.push(left.splice(Math.floor(rnd(s) * left.length), 1)[0]);
+      if (!r.pick.length) r.pick = null;
+    }
+    return { n, board: r.board.slice() };
+  }
+  /* 推：把一列往下推一格，最上面进来一个新符号。每波免费一次。 */
+  function nudge(s, col) {
+    const r = s.run;
+    if (!r || r.phase !== "prep" || !r.board || r.nudges <= 0 || r.pick || r.promo || col < 0 || col > 2) return null;
+    const before = D.LINES.map((L) => lineSym(r.board, L));
+    r.board[col + 6] = r.board[col + 3];
+    r.board[col + 3] = r.board[col];
+    r.board[col] = rollSym(s);
+    r.nudges--;
+    D.LINES.forEach((L, i) => {
+      if (lineSym(r.board, L) !== before[i]) r.paid[i] = false; // 这条线变了，可以重新算
     });
-    return r.reel;
+    r.got = [];
+    return { n: evaluate(s) };
+  }
+  function pickCore(s, i) {
+    const r = s.run;
+    if (!r || !r.pick || !r.pick[i]) return false;
+    r.own.push(r.pick[i]);
+    if (r.pick[i] === "push") r.nudges++;
+    r.pick = null;
+    return true;
+  }
+  /* 吸收：a 吃掉 b，a 的等级加上 b 的等级，b 消失。等级不封顶。到 5 级要选一次晋升。 */
+  function absorb(s, a, b) {
+    const r = s.run;
+    if (!r || r.phase !== "prep" || r.promo || a === b) return false;
+    const A = r.units.find((u) => u.id === a), B = r.units.find((u) => u.id === b);
+    if (!A || !B) return false;
+    A.lv += B.lv;
+    r.units = r.units.filter((u) => u.id !== b);
+    if (A.lv >= R.promoteAt && !A.sub && D.SUBS[A.k]) r.promo = A.id;
+    return true;
+  }
+  function promote(s, i) {
+    const r = s.run;
+    if (!r || !r.promo) return false;
+    const u = r.units.find((x) => x.id === r.promo), opt = D.SUBS[u.k][i];
+    if (!opt) return false;
+    u.sub = opt.id;
+    r.promo = null;
+    return true;
+  }
+  /* 自动吸收到不超员：每次让最弱的被同兵种里最强的吃掉，没有同兵种就给全队最强的。 */
+  function autoAbsorb(s) {
+    const r = s.run;
+    let n = 0;
+    while (r && r.phase === "prep" && !r.promo && r.units.length > capOf(s)) {
+      const food = r.units.slice().sort((x, y) => x.lv - y.lv || y.id - x.id)[0];
+      const rest = r.units.filter((u) => u !== food);
+      const same = rest.filter((u) => u.k === food.k).sort((x, y) => y.lv - x.lv)[0];
+      const eater = same || rest.sort((x, y) => y.lv - x.lv)[0];
+      absorb(s, eater.id, food.id);
+      n++;
+    }
+    return n;
+  }
+  function fightBlock(s) {
+    const r = s.run;
+    if (!r || r.phase !== "prep") return "不在备战";
+    if (r.pick) return "先选一个核心";
+    if (r.promo) return "先选晋升";
+    if (r.units.length > capOf(s)) return "队伍超员，先让帮手吸收";
+    return "";
   }
 
   /* ---------- 战斗 ---------- */
+  /* 站位：前排靠右，盾手最前；后排靠左。人多了自动站密一点。 */
+  function lineup(units) {
+    const order = { shield: 0, relic: 1, spear: 2, hound: 3 };
+    const front = units.filter((u) => D.UNITS[u.k].line === "front").sort((a, b) => order[a.k] - order[b.k] || b.lv - a.lv);
+    const back = units.filter((u) => D.UNITS[u.k].line === "back").sort((a, b) => b.lv - a.lv);
+    const fs = Math.min(10, 52 / Math.max(1, front.length)), bs = Math.min(9, 30 / Math.max(1, back.length));
+    return front.map((u, i) => ({ u, x: 108 - fs * i })).concat(back.map((u, i) => ({ u, x: 52 - bs * i })));
+  }
+  function body(r, u, x) {
+    const U = D.UNITS[u.k], m = 1 + R.lvGrow * (u.lv - 1), front = U.line === "front";
+    const hp = Math.round(U.hp * m * (front && has(r, "wall") ? 1.5 : 1) * (u.sub === "wall" ? 1.6 : 1));
+    return {
+      side: 0, k: u.k, sub: u.sub, lv: u.lv, uid: u.id, x, home: x, hp, max: hp,
+      atk: U.atk * m * (has(r, "war") ? 1.25 : 1) * (u.sub === "heavy" ? 2 : 1),
+      cd: (U.cd * (u.sub === "heavy" ? 1.3 : 1)) / (u.sub === "rush" ? 1.5 : 1) / (!front && has(r, "swift") ? 1.25 : 1),
+      heal: (U.heal || 0) * m * (u.sub === "medic" ? 2 : 1), splash: (U.splash || 0) * (u.sub === "blast" ? 2 : 1), t: 0.3, n: 0,
+    };
+  }
   function beginWave(s) {
     const r = s.run;
-    if (!r || r.phase !== "spin" || r.spins === 0) return false; // 每波至少拉一次
-    const h = heroStats(s), W = D.WAVES[r.wave], scale = 1 + 0.14 * r.wave;
-    const ents = [{ side: 0, hero: 1, k: r.wear, x: HERO_X, hp: r.hp, max: h.max, t: 0.3 }];
-    let nf = 0, nb = 0;
-    for (const it of r.items) {
-      if (it.t !== "u") continue;
-      const U = D.UNITS[it.k];
-      if (U.line === "fix") continue;
-      const m = D.STAR[it.star], hp = Math.round(U.hp * m);
-      const x = U.line === "front" ? 74 - 9 * nf++ : 40 - 7 * nb++;
-      ents.push({ side: 0, k: it.k, x, home: x, hp, max: hp, atk: U.atk * m, star: it.star, t: 0.2 + 0.1 * (nf + nb) });
+    if (fightBlock(s)) return false;
+    const W = D.WAVES[r.wave], scale = 1 + 0.24 * r.wave, ents = [];
+    for (const { u, x } of lineup(r.units)) {
+      ents.push(body(r, u, x));
+      if (u.sub === "pack") ents.push(Object.assign(body(r, u, x - 5), { uid: 0 }));
     }
     const queue = [];
-    let at = 0.4;
-    for (const [e, n] of W) for (let i = 0; i < n; i++) {
+    let at = 0.5;
+    for (const [e, n] of W.foes) for (let i = 0; i < n; i++) {
       queue.push({ at, e });
-      at += D.ENEMIES[e].boss ? 0 : D.ENEMIES[e].big ? 1.4 : 0.22;
+      at += D.ENEMIES[e].boss ? 0 : D.ENEMIES[e].big ? 1.4 : 0.24;
     }
     queue.sort((a, b) => a.at - b.at);
-    r.fight = { t: 0, ents, queue, scale, snare: 2 * star(r, "u", "snare"), ult: r.ultT, fire: 0, fireT: 0, jav: 3, aided: false, ev: [], kills: 0, gotCores: 0 };
+    r.fight = { t: 0, ents, queue, scale, kind: W.kind || "", ev: [], gotCores: 0, kills: 0, leaks: 0 };
     r.phase = "fight";
-    r.reel = null;
+    r.board = null;
+    r.got = [];
     return true;
   }
   const alive = (f, side) => f.ents.filter((e) => e.side === side && e.hp > 0);
-  function hit(f, e, dmg, crit) {
-    if (e.hp <= 0) return;
+  function hit(f, e, dmg, big) {
+    if (!e || e.hp <= 0) return;
     e.hp -= dmg;
-    f.ev.push({ k: "hit", x: e.x, side: e.side, v: Math.max(1, Math.round(dmg)), big: !!crit, id: f.ents.indexOf(e) });
-  }
-  /* 手动放大招：冷却好了、场上有敌人才有效。 */
-  function ult(s) {
-    const r = s.run;
-    if (!r || r.phase !== "fight") return false;
-    const f = r.fight, h = heroStats(s), foes = alive(f, 1);
-    if (f.ult > 0 || !foes.length || f.ents[0].hp <= 0) return false;
-    f.ult = h.ultCd;
-    f.ev.push({ k: "ult", wear: r.wear });
-    if (r.wear === "hunter") for (const e of foes) hit(f, e, h.atk * 5, true);
-    else f.fire = 4;
-    return true;
+    f.ev.push({ k: "hit", x: e.x, side: e.side, v: Math.max(1, Math.round(dmg)), big: !!big, id: f.ents.indexOf(e) });
   }
 
   function step(s, dt) {
     const r = s.run;
     if (!r || r.phase !== "fight") return;
-    const f = r.fight, h = heroStats(s), hero = f.ents[0];
+    const f = r.fight;
     f.t += dt;
-    f.ult = Math.max(0, f.ult - dt);
     while (f.queue.length && f.queue[0].at <= f.t) {
       const q = f.queue.shift(), E = D.ENEMIES[q.e], hp = Math.round(E.hp * f.scale);
-      f.ents.push({ side: 1, k: q.e, x: SPAWN_X, hp, max: hp, atk: E.atk * f.scale, t: E.cd * 0.5, stun: 0 });
+      f.ents.push({ side: 1, k: q.e, x: SPAWN_X, hp, max: hp, atk: E.atk * f.scale, t: E.cd * 0.5, burn: 0, burnD: 0 });
     }
-    const haste = 1 + 0.15 * star(r, "u", "lamp"), ally = 1 + 0.25 * star(r, "g", "horn");
-    const smoke = star(r, "s", "smoke"), guard = smoke && f.t < 2 + smoke ? 0.5 : 1;
-    const rage = f.t > 60 ? 2 : 1; // 拖太久敌人会发狂，避免僵局
     const foes = alive(f, 1), mine = alive(f, 0);
-    const nearest = foes.reduce((a, e) => (!a || e.x < a.x ? e : a), null);
-    const front = mine.reduce((a, e) => (!a || e.x > a.x ? e : a), null);
+    const haste = mine.some((a) => a.sub === "war") ? 1.25 : 1;
+    const rage = f.t > 75 ? 2 : 1; // 拖太久敌人会发狂，避免僵局
 
-    // 你
-    if (hero.hp > 0) {
-      hero.t -= dt;
-      if (s.auto && f.ult <= 0 && foes.length >= (r.wear === "hunter" ? 3 : 2)) ult(s);
-      if (hero.t <= 0 && foes.length) {
-        if (r.wear === "hunter") {
-          const inR = foes.filter((e) => e.x - hero.x <= h.range);
-          const tg = inR.reduce((a, e) => (!a || e.max > a.max || (e.max === a.max && e.x < a.x) ? e : a), null);
-          if (tg) {
-            hit(f, tg, h.atk * (D.ENEMIES[tg.k].big ? 2 : 1));
-            f.ev.push({ k: "shot", x: tg.x });
-            hero.t = h.cd;
-          }
-        } else {
-          const inR = foes.filter((e) => e.x - hero.x <= h.range);
-          if (inR.length) {
-            for (const e of inR) hit(f, e, h.atk);
-            f.ev.push({ k: "flame" });
-            hero.t = h.cd;
-          }
-        }
-      }
-      if (f.fire > 0) {
-        f.fire -= dt;
-        f.fireT -= dt;
-        if (f.fireT <= 0) {
-          f.fireT = 0.3;
-          for (const e of foes) if (e.x - hero.x <= 110) hit(f, e, h.atk * 1.5);
-        }
-      }
-      const jv = star(r, "s", "javelin");
-      if (jv) {
-        f.jav -= dt;
-        if (f.jav <= 0 && foes.length) {
-          f.jav = 3;
-          const tg = foes.reduce((a, e) => (!a || e.hp > a.hp ? e : a), null);
-          hit(f, tg, h.atk * 2.5 * D.STAR[jv], true);
-          f.ev.push({ k: "jav", x: tg.x });
-        }
-      }
-      const aid = star(r, "s", "aid");
-      if (aid && !f.aided && hero.hp < hero.max * 0.4) {
-        f.aided = true;
-        hero.hp = Math.min(hero.max, hero.hp + Math.round(hero.max * 0.25 * D.STAR[aid]));
-        f.ev.push({ k: "heal", x: hero.x });
-      }
-    }
     // 帮手
     for (const a of mine) {
-      if (a.hero) continue;
       const U = D.UNITS[a.k];
       a.t -= dt * haste;
       if (a.k === "drum") {
         if (a.t <= 0) {
-          a.t = U.cd;
-          for (const m of mine) m.hp = Math.min(m.max, m.hp + 3 * D.STAR[a.star]);
+          a.t = a.cd;
+          if (a.sub !== "war") for (const m of mine) m.hp = Math.min(m.max, m.hp + a.heal);
           f.ev.push({ k: "heal", x: a.x });
         }
         continue;
@@ -233,84 +263,112 @@
         a.x += Math.sign(a.home - a.x) * Math.min(Math.abs(a.home - a.x), 30 * dt);
         continue;
       }
-      const dist = tg.x - a.x;
+      const dist = Math.abs(tg.x - a.x);
       if (dist <= U.range) {
-        if (a.t <= 0) {
-          a.t = U.cd;
-          hit(f, tg, a.atk * ally);
-          if (U.splash) for (const e of foes) if (e !== tg && Math.abs(e.x - tg.x) <= U.splash) hit(f, e, a.atk * ally * 0.6);
-          if (U.range > 30) f.ev.push({ k: U.splash ? "lob" : "bolt", x0: a.x, x: tg.x });
+        if (a.t > 0) continue;
+        a.t = a.cd;
+        a.n++;
+        const dmg = a.atk * (a.sub === "alpha" && a.n % 3 === 0 ? 3 : 1);
+        hit(f, tg, dmg, a.sub === "alpha" && a.n % 3 === 0);
+        if (a.sub === "twin") hit(f, tg, dmg);
+        if (a.sub === "oil") {
+          tg.burn = 3;
+          tg.burnD = a.atk * 0.5;
         }
-      } else if (U.line === "front" && tg.x < 160) a.x = Math.min(tg.x - U.range + 1, a.home + (U.spd ? 40 : 10), a.x + (U.spd || 26) * dt); // 前排只往前顶一点，把敌人挡在你够得着的地方
+        if (a.splash) for (const e of foes) if (e !== tg && Math.abs(e.x - tg.x) <= a.splash) {
+          hit(f, e, dmg * 0.6);
+          if (a.sub === "oil") {
+            e.burn = 3;
+            e.burnD = a.atk * 0.5;
+          }
+        }
+        if (a.sub === "pike") hit(f, foes.filter((e) => e !== tg && Math.abs(e.x - tg.x) <= 16)[0], dmg);
+        if (U.range > 30) f.ev.push({ k: a.k === "fire" ? "lob" : "bolt", x0: a.x, x: tg.x });
+        else f.ev.push({ k: "jab", x: a.x });
+      } else if (U.line === "front" && tg.x > a.x && tg.x < 175) a.x = Math.min(tg.x - U.range + 1, 150, a.x + (U.spd || 30) * dt); // 前排一起压上去，不排队等
     }
     // 敌人
     for (const e of foes) {
       const E = D.ENEMIES[e.k];
-      if (e.stun > 0) {
-        e.stun -= dt;
-        continue;
+      if (e.burn > 0) {
+        e.burn -= dt;
+        e.hp -= e.burnD * dt;
       }
-      if (f.snare > 0 && !e.snared && e.x <= SNARE_X && !E.boss) {
-        e.snared = true;
-        e.stun = 2;
-        f.snare--;
-        f.ev.push({ k: "snare", x: e.x });
-        continue;
-      }
-      if (!front) break;
-      const dist = e.x - front.x;
       e.t -= dt;
+      // 走地的打最前面的人；会飞的越过前排，直扑最后面的人
+      const ahead = mine.filter((m) => m.hp > 0 && m.x <= e.x + 4);
+      const tg = E.fly ? ahead.reduce((b, m) => (!b || m.x < b.x ? m : b), null) : ahead.reduce((b, m) => (!b || m.x > b.x ? m : b), null);
+      if (!tg) {
+        e.x -= E.spd * rage * dt;
+        if (e.x <= GATE_X) {
+          e.hp = 0;
+          e.leaked = true;
+          f.leaks++;
+          f.ev.push({ k: "leak", x: e.x });
+        }
+        continue;
+      }
+      const dist = e.x - tg.x;
       if (dist > E.range) {
         e.x -= E.spd * dt;
         if (E.lunge && !e.lunged && dist < 48) {
           e.lunged = true;
-          e.x = Math.max(front.x + E.range, e.x - 26);
+          e.x = Math.max(tg.x + E.range, e.x - 26);
         }
       } else if (e.t <= 0) {
         e.t = E.cd;
-        hit(f, front, e.atk * guard * rage);
+        const dmg = e.atk * rage;
+        hit(f, tg, dmg);
+        if (tg.sub === "thorn") hit(f, e, dmg * 0.5);
       }
     }
-    // 结算倒下的
     for (const e of f.ents) {
       if (e.hp > 0 || e.dead) continue;
       e.dead = true;
+      if (e.leaked) continue;
       f.ev.push({ k: "die", x: e.x, side: e.side });
       if (e.side === 1) {
         f.kills++;
-        f.gotCores += D.ENEMIES[e.k].core * (1 + 0.2 * star(r, "g", "hook"));
+        f.gotCores += D.ENEMIES[e.k].core * (has(r, "bounty") ? 1.5 : 1);
       }
     }
-    r.hp = Math.max(0, Math.round(hero.hp));
-    if (hero.hp <= 0) return endRun(s, "dead");
+    // 漏过去的：审判波和首领波漏一个就输；平常的波漏一个扣一条命
+    if (f.leaks > 0) {
+      if (f.kind) return endRun(s, "lost");
+      r.hearts -= f.leaks;
+      f.leaks = 0;
+      if (r.hearts <= 0) return endRun(s, "lost");
+    }
     if (!f.queue.length && !alive(f, 1).length) {
-      const got = Math.round(f.gotCores);
+      const got = Math.round(f.gotCores) + R.waveBonus + 2 * r.wave;
       r.cores += got;
-      r.ultT = f.ult;
-      r.lastWave = { got, kills: f.kills, time: f.t };
+      r.lastWave = { got, kills: f.kills, time: Math.round(f.t * 10) / 10 };
+      if (has(r, "mend")) r.hearts = Math.min(r.heartsMax, r.hearts + 1);
       r.fight = null;
       r.wave++;
       r.spins = 0;
+      r.nudges = R.nudges + (has(r, "push") ? 1 : 0);
       if (r.wave >= D.WAVES.length) return endRun(s, "won");
-      r.phase = "spin";
+      r.phase = "prep";
     }
   }
 
-  /* 主动回家：能核全部带回。倒下：只带回一半。打穿：全部带回再加 20。 */
+  /* 一局结束：不管输赢都得到余烬，守住的波数越多越多。 */
   function endRun(s, how) {
-    const r = s.run, keep = how === "dead" ? Math.floor(r.cores / 2) : r.cores + (how === "won" ? 20 : 0);
-    s.bank += keep;
+    const r = s.run, gain = r.wave * 3 + (how === "won" ? 25 : 0);
+    s.embers += gain;
     s.best = Math.max(s.best, r.wave);
-    s.last = { how, wave: r.wave, cores: r.cores, keep, items: r.items.map((x) => ({ t: x.t, k: x.k, star: x.star })) };
+    s.last = { how, wave: r.wave, gain, units: r.units.map((u) => ({ k: u.k, lv: u.lv, sub: u.sub })), own: r.own.slice() };
     s.run = null;
     return how;
   }
-  function goHome(s) {
-    if (!s.run || s.run.phase !== "spin") return false;
-    endRun(s, "home");
+  function giveUp(s) {
+    if (!s.run) return false;
+    endRun(s, "quit");
     return true;
   }
-  const info = (it) => (it.t === "u" ? D.UNITS : it.t === "g" ? D.GEAR : D.SKILLS)[it.k];
+  const subOf = (u) => (u.sub ? D.SUBS[u.k].find((x) => x.id === u.sub) : null);
+  const nameOf = (u) => (subOf(u) ? subOf(u).name : D.UNITS[u.k].name);
 
-  G.EmberSim = { newGame, upgrade, upgradeCost, wear, heroStats, startRun, spin, spinCost, beginWave, step, ult, goHome, info, HERO_X, SNARE_X };
+  G.EmberSim = { newGame, buy, startRun, capOf, symbolsOf, lineSym, spin, spinCost, spinBlock, nudge, pickCore, absorb, promote, autoAbsorb, fightBlock, beginWave, lineup, step, giveUp, nameOf, subOf, GATE_X };
 })(typeof globalThis !== "undefined" ? globalThis : window);
