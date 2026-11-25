@@ -1,4 +1,4 @@
-// 万丈深渊：浏览器回归。五种尺寸下开局、下潜、遭遇、读档、坏档自救、无横向溢出。
+// 万丈深渊：浏览器回归（v4 切片）。五种尺寸下开局、拉拨盘、打一波、读档、无横向溢出；坏档自救。
 // 用法：先在仓库根目录运行 python -m http.server 8765，再运行 node tests/ember-browser-check.js
 // 需要 playwright 或 playwright-core；没有下载浏览器时会用本机的 Edge 或 Chrome。
 let pw;
@@ -40,108 +40,73 @@ async function launch() {
     try {
       await p.click("#modal .btn");
       await p.click("[data-act=go]");
-      // 造一场遭遇：第一步只有白鬣
-      await p.evaluate(() => {
-        __ember.state.dive.map[0] = [{ t: "fight", e: "whiteHyena", n: 1 }];
-        __ember.state.spare = "stoker"; // 带备用行装时遭遇面板最高
-        for (const id in __ember.state.outfits) __ember.state.outfits[id].adv = true; // 进阶后有战术区，按最坏情况量
-      });
-      await p.evaluate(() => document.querySelector("[data-act=tab]") || 0);
-      await p.evaluate(() => __ember.save());
-      await p.reload();
-      await p.waitForTimeout(300);
-      await p.click("[data-act=node]");
-      // 遭遇时三个按钮都要在首屏内
-      const vis = await p.evaluate(() => ["[data-act=fight]", "[data-act=detour]", "[data-act=retreat]", ".tac"].map((q) => {
+      await p.click("[data-act=spin]");
+      await p.waitForTimeout(700);
+      // 拉完之后：拨盘三格、拉杆、开打、回家都要在一屏内
+      const vis = await p.evaluate(() => [".reel", "[data-act=spin]", "[data-act=fight]", "[data-act=home]"].map((q) => {
         const r = document.querySelector(q).getBoundingClientRect();
         return r.bottom <= window.innerHeight && r.top >= 0;
       }));
       if (vis.includes(false)) {
         pass = false;
-        note += "遭遇的按钮或战术不在首屏 " + vis.join("/") + "；";
+        note += "拨盘或按钮不在首屏 " + vis.join("/") + "；";
+      }
+      const items = await p.evaluate(() => __ember.state.run.items.length + __ember.state.run.cores);
+      if (!(items > 0)) {
+        pass = false;
+        note += "拉了拨盘却什么都没得到；";
       }
       await p.click("[data-act=fight]");
-      await p.click("[data-act=skip]");
+      await p.click("[data-act=speed]");
+      await p.waitForFunction(() => !__ember.state.run || __ember.state.run.phase !== "fight", null, { timeout: 60000 });
+      const st = await p.evaluate(() => ({ wave: __ember.state.run && __ember.state.run.wave, cores: __ember.state.run && __ember.state.run.cores }));
+      if (st.wave !== 1 || !(st.cores > 0)) {
+        pass = false;
+        note += "第一波没打赢或没拿到能核 " + JSON.stringify(st) + "；";
+      }
       const m = await p.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
       if (m[0] !== m[1]) {
         pass = false;
         note += "横向溢出 " + m.join("/") + "；";
       }
-      // 读档：下潜中刷新后状态不变
-      const before = await p.evaluate(() => JSON.stringify(__ember.state.dive && __ember.state.dive.carry));
+      const before = await p.evaluate(() => JSON.stringify(__ember.state.run.items) + __ember.state.run.cores);
       await p.reload();
       await p.waitForTimeout(300);
-      const after = await p.evaluate(() => JSON.stringify(__ember.state.dive && __ember.state.dive.carry));
+      const after = await p.evaluate(() => __ember.state.run && JSON.stringify(__ember.state.run.items) + __ember.state.run.cores);
       if (before !== after) {
         pass = false;
         note += "读档不一致；";
       }
-      // 画布整倍放大
       const k = await p.evaluate(() => document.getElementById("cv").getBoundingClientRect().width / 180);
       note += "画布 " + k.toFixed(2) + " 倍";
     } catch (e) {
       pass = false;
       note += e.message.split("\n")[0];
     }
-    ok(w + "x" + h + " 开局、遭遇、战斗、读档、无溢出", pass, note);
+    ok(w + "x" + h + " 开局、拉拨盘、打一波、读档、无溢出", pass, note);
     await p.context().close();
   }
-  // 坏档：主存档损坏时用备份；两份都坏时出现自救界面
   {
     const p = await page(390, 844, true);
     await p.click("#modal .btn");
     await p.click("[data-act=go]");
-    await p.click("[data-act=home]");
-    await p.evaluate(() => localStorage.setItem("wzsy.save.v2", "{bad"));
-    await p.reload();
-    await p.waitForTimeout(300);
-    const dives = await p.evaluate(() => window.__ember && __ember.state.dives);
-    ok("主存档损坏时读备份", dives === 1, "dives=" + dives);
-    await p.evaluate(() => {
-      localStorage.setItem("wzsy.save.v2", JSON.stringify({ v: 2, hearth: "x", store: { core: -5 }, outfits: { hunter: { lv: 1e9 } }, wear: "nope", items: [{ id: 1, b: "blade", r: 0, a: [["atk", 3]] }, { id: 2, b: "bogus", r: 9, a: [] }], equip: [1, 2, 77], skills: ["spear", "x"], slots: ["spear", "quake"], dive: { layer: 7 } }));
-      localStorage.removeItem("wzsy.save.v2.bak");
-    });
-    await p.reload();
-    await p.waitForTimeout(300);
-    const s = await p.evaluate(() => window.__ember && { core: __ember.state.store.core, lv: __ember.state.outfits.hunter.lv, wear: __ember.state.wear, items: __ember.state.items.length, equip: __ember.state.equip, slots: __ember.state.slots, dive: __ember.state.dive });
-    ok("乱填的存档被逐项纠正", s && s.core === 0 && s.lv === 99 && s.wear === "hunter" && s.items === 1 && s.equip.join() === "1" && s.slots.join() === "spear" && s.dive === null, JSON.stringify(s));
-    await p.context().close();
-  }
-  // 行装页：换行装、装配件、带技艺都走界面按钮
-  {
-    const p = await page(390, 844, true);
-    await p.click("#modal .btn");
-    await p.evaluate(() => {
-      const st = __ember.state;
-      st.items.push({ id: 5, b: "awl", r: 1, a: [["hunt", 35], ["atk", 6]] });
-      st.nextId = 6;
-      st.skills.push("spear");
-      __ember.save();
-    });
-    await p.reload();
-    await p.waitForTimeout(300);
-    await p.click("[data-act=tab][data-v=kit]");
-    await p.click("[data-act=wear][data-v=guard]");
-    await p.click("[data-act=spare][data-v=stoker]");
-    await p.click("[data-act=kit][data-v=items]");
-    await p.click("[data-act=equip][data-v='5']");
-    await p.click("[data-act=kit][data-v=skills]");
-    await p.click("[data-act=skill][data-v=spear]");
-    const k = await p.evaluate(() => ({ wear: __ember.state.wear, spare: __ember.state.spare, equip: __ember.state.equip.join(), slots: __ember.state.slots.join(), sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
-    ok("行装页：换行装、选备用、装配件、带技艺", k.wear === "guard" && k.spare === "stoker" && k.equip === "5" && k.slots === "spear" && k.sw === k.cw, JSON.stringify(k));
-    // 下潜中换上备用行装，再打一场
-    await p.click("[data-act=tab][data-v=go]");
-    await p.click("[data-act=go]");
-    await p.evaluate(() => {
-      __ember.state.dive.map[0] = [{ t: "fight", e: "frostRat", n: 3 }];
-    });
-    await p.click("[data-act=node]");
-    await p.click("[data-act=swap]");
-    const w2 = await p.evaluate(() => ({ wear: __ember.state.wear, spare: __ember.state.spare, id: __ember.state.dive.team[0].id }));
-    await p.click("[data-act=fight]");
+    await p.click("[data-act=spin]");
     await p.waitForTimeout(700);
-    await p.click("[data-act=skip]");
-    ok("下潜中换上备用行装并打一场", w2.wear === "stoker" && w2.spare === "guard" && w2.id === "stoker", JSON.stringify(w2));
+    await p.click("[data-act=home]");
+    await p.click("#modal .btn");
+    await p.evaluate(() => localStorage.setItem("wzsy.save.v4", "{bad"));
+    await p.reload();
+    await p.waitForTimeout(300);
+    const runs = await p.evaluate(() => window.__ember && __ember.state.runs);
+    ok("主存档损坏时读备份", runs === 1, "runs=" + runs);
+    await p.evaluate(() => {
+      localStorage.setItem("wzsy.save.v4", JSON.stringify({ v: 4, bank: -9, lv: 1e9, wear: "nope", run: { wear: "hunter", wave: 99, cores: "x", items: [{ t: "u", k: "spear", star: 7 }] } }));
+      localStorage.removeItem("wzsy.save.v4.bak");
+    });
+    await p.reload();
+    await p.waitForTimeout(300);
+    const s = await p.evaluate(() => window.__ember && { bank: __ember.state.bank, lv: __ember.state.lv, wear: __ember.state.wear, run: __ember.state.run });
+    ok("乱填的存档被逐项纠正", s && s.bank === 0 && s.lv === 99 && s.wear === "hunter" && s.run === null, JSON.stringify(s));
     await p.context().close();
   }
   ok("全程无页面报错", errs.length === 0, errs.slice(0, 3).join(" | "));

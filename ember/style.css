@@ -156,3 +156,23 @@ textarea { width: 100%; height: 96px; background: var(--coal); color: var(--snow
   #res { gap: 6px; }
   .tabs button { font-size: 12px; }
 }
+
+/* v4：拨盘和队伍 */
+.reel { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.reel .cell { background: var(--coal); border: 2px solid var(--rust); box-shadow: inset 0 2px 0 var(--night); min-height: 76px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; text-align: center; }
+.reel .cell b { font-weight: normal; }
+.reel .cell small { color: var(--frost); }
+.reel .cell img { width: 32px; height: 32px; image-rendering: pixelated; }
+.reel .cell.got-up { border-color: var(--emberHi); }
+.reel .cell.got-up small { color: var(--emberHi); }
+.reel .cell.got-new { border-color: var(--frost); }
+.btns.two { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.btns.two .btn { text-align: center; }
+.roster { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; }
+.roster .it { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.roster .it span { min-width: 0; display: flex; flex-direction: column; }
+.roster .it b { font-weight: normal; white-space: nowrap; }
+.roster .it small { color: var(--frost); }
+.gl { width: 24px; height: 24px; image-rendering: pixelated; flex: none; }
+.st { font-style: normal; color: var(--emberHi); }
+@media (max-width: 380px) { .roster { grid-template-columns: 1fr; } }

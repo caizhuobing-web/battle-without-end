@@ -474,7 +474,7 @@
     return get("vig", () => {
       const cv = mk(W, H), c = cv.getContext("2d");
       c.fillStyle = PAL.coal;
-      const cx = HX + 6, cy = FLOOR - 12;
+      const cx = 46, cy = FLOOR - 12;
       for (let y = 0; y < H; y++)
         for (let x = 0; x < W; x++) {
           const dx = x - cx, dy = (y - cy) * 1.5, q = Math.sqrt(dx * dx + dy * dy);
@@ -592,14 +592,12 @@
     }
   }
   function town(c, s, t) {
-    c.drawImage(townBG(s.hearth, s.route), 0, 0);
-    drawHearth(c, s, t);
+    // 炉火随行装等级变旺，亮窗随最好成绩变多
+    const hearth = Math.min(10, 2 + s.lv), route = Math.min(3, Math.floor((s.best || 0) / 4));
+    c.drawImage(townBG(hearth, route), 0, 0);
+    drawHearth(c, { hearth }, t);
     const sp0 = teamSpr(s.wear);
     c.drawImage(sp0.cv, 58, 100 - sp0.h + (Math.floor(t * 1.5) % 2));
-    if (s.flags.wei) {
-      const sp = teamSpr("wei");
-      c.drawImage(sp.cv, 118, 100 - sp.h);
-    }
     snow(c, t);
   }
 
@@ -638,160 +636,168 @@
     c.fillStyle = col;
     c.fillRect(x, y, Math.max(0, Math.round(w * Math.min(1, k))), 2);
   }
-  /* 敌人在画面上的位置：从右往左排，每排 3 个；会飞的悬在半空。坐标全部取整。 */
-  function place(eid, i) {
-    const sp = foeSpr(eid, 0, 0);
-    const col = i % 3, row = Math.floor(i / 3);
-    const x = Math.round(W - 6 - sp.w - col * (sp.w + 1) - row * 7);
-    const y = Math.round(FLOOR - sp.h + 2 - row * 9 - (FLY[eid] ? 22 + ((i * 7) % 9) : 0));
-    return { x, y };
-  }
-  const HX = 30; // 主角站的位置
 
-  /* view 由界面维护：{fight:{fx,i}, flash, floats, shake, walk, scroll, lungeT, lungeF}。 */
+  /* 帮手：小一号的人和机关。a 亮面 b 本色 c 暗面（各自的标志色）；s 皮肤；m w 金属；g 裤；E e 火。 */
+  const ALLY = {
+    spear: ["......w", "..ss..m", "..ss..m", ".abbc.m", ".abbcsm", ".abbc.m", "..gg..m", "..g.g..", ".gg.gg."],
+    shield: ["..mm...", ".mssm..", "..ss.ww", ".abbwmm", ".abbwbm", ".abbwmm", "..gg.m.", "..g.g..", ".gg.gg."],
+    hound: ["........", "ll....l.", "lCxxxxxl", "Txxxxxxx", ".yxxxxy.", ".y.y.y.y"],
+    crossbow: ["..ss...", "..ss...", ".abbc.w", ".abbsmm", ".abbc.w", "..gg...", "..g.g..", ".gg.gg."],
+    torch: ["....E..", "..ss.e.", "..ss.m.", ".abbcs.", ".abbc..", ".abbc..", "..gg...", "..g.g..", ".gg.gg."],
+    drum: ["..ss...", "..ss...", ".abbc..", ".abbmmm", ".abbmwm", "..ggmm.", "..g.g..", ".gg.gg."],
+    lamp: [".mmm.", ".mEm.", ".mem.", ".mmm.", "..m..", "..m..", ".mmm."],
+    snare: ["m.......m", "mwwwwwwwm", "m.......m"],
+  };
+  const ALLYC = { spear: PAL.hunter, shield: PAL.guard, crossbow: PAL.wei, torch: PAL.stoker, drum: PAL.snow };
+  function allySpr(k) {
+    return get("a" + k, () => {
+      const col = ALLYC[k] || PAL.frost;
+      return bake(ALLY[k], { a: lite(col), b: col, c: dark(col), s: PAL.skin, m: PAL.frost, w: PAL.snow, g: mixh(PAL.frost, PAL.coal, 0.35), E: PAL.ember, e: PAL.emberHi, l: lite(PAL.load), x: PAL.load, y: dark(PAL.load), C: PAL.coal, T: PAL.snow });
+    });
+  }
+  /* 给拨盘和清单用的图标：帮手直接用它的精灵，装备和技艺用 8×8 图标。 */
+  const GLYPH = {
+    blade: ["......X.", ".....XX.", "....XX..", "...XX...", "X.XX....", ".XX.....", "X.X.....", "........"],
+    felt: [".XXXXX..", "XXXXXXX.", "XX.X.XX.", "XXXXXXX.", "XXXXXXX.", ".XXXXX..", "........", "........"],
+    grip: ["..XXX...", ".X...X..", ".X.X.X..", ".X..XX..", ".X...X..", "..XXX...", "........", "........"],
+    wire: ["X.......", ".X..X...", "..XX.X..", "..X..X..", ".X..XX..", "...X..X.", "......X.", "........"],
+    horn: ["......X.", "....XXX.", "XXXXXXX.", "XXXXXXX.", "....XXX.", "......X.", "........", "........"],
+    hook: ["..XXX...", ".X...X..", ".....X..", "....X...", "...X....", "X..X....", ".XX.....", "........"],
+    javelin: ["......XX", ".....XX.", "....X...", "...X....", "..X.....", ".X......", "X.......", "........"],
+    smoke: ["..XX....", ".XXXX.X.", "XXXXXXXX", "XXXXXXX.", ".XXXXX..", "..X.XX..", "........", "........"],
+    aid: ["...XX...", "...XX...", ".XXXXXX.", ".XXXXXX.", "...XX...", "...XX...", "........", "........"],
+  };
+  function glyphURL(it) {
+    return get("g" + it.t + it.k, () => {
+      const cv = mk(16, 16), c = cv.getContext("2d");
+      c.imageSmoothingEnabled = false;
+      if (it.t === "u") {
+        const sp = allySpr(it.k), k = Math.min(16 / sp.w, 16 / sp.h) >= 2 ? 2 : 1;
+        c.drawImage(sp.cv, Math.floor((16 - sp.w * k) / 2), Math.floor((16 - sp.h * k) / 2), sp.w * k, sp.h * k);
+      } else {
+        c.fillStyle = it.t === "g" ? PAL.snow : PAL.emberHi;
+        const rows = GLYPH[it.k];
+        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (rows[y][x] === "X") c.fillRect(x * 2, y * 2, 2, 2);
+      }
+      return cv.toDataURL();
+    });
+  }
+
+  const HX = G.EmberSim ? G.EmberSim.HERO_X : 16, GROUND = FLOOR + 3;
+  /* 画一个站在地上的东西：x 是脚下的中点。 */
+  function stand(c, sp, x, yOff, flash) {
+    c.drawImage(flash ? sp.fl : sp.cv, Math.round(x - sp.w / 2), GROUND - sp.h + (yOff || 0));
+  }
+
+  /* view 由界面维护：{flash:{序号:到期时间}, fx:[{k,...,t0}], floats, shake, ultT}。 */
   function draw(c, s, view, t) {
     c.imageSmoothingEnabled = false;
     const shake = view.shake > 0 ? Math.round((hash((t * 60) | 0) - 0.5) * view.shake * 4) : 0;
     c.save();
     c.translate(shake, 0);
-    const fx = view.fight && view.fight.fx;
-    if (!s.dive && !fx) {
+    const r = s.run;
+    if (!r) {
       town(c, s, t);
       c.restore();
       return;
     }
-    const tide = !!(fx && fx.tide);
-    const layer = fx ? fx.layer : s.dive.layer;
-    const ground = tide ? 100 : FLOOR + 3;
-    if (tide) {
-      // 兽潮：在聚落门口迎击
-      c.drawImage(townBG(s.hearth, s.route), 0, 0);
-      snow(c, t);
-    } else {
-      const bg = caveBG(layer, s.route >= layer);
-      const off = Math.floor(view.scroll || 0) % W;
-      if (farImg) {
-        const fo = Math.floor((view.scroll || 0) * 0.4) % FARW, fb = farBG(layer);
-        c.drawImage(fb, -fo, 0);
-        if (fo > FARW - W) c.drawImage(fb, FARW - fo, 0);
-      }
-      c.drawImage(bg, -off, 0);
-      if (off) c.drawImage(bg, W - off, 0);
-      c.drawImage(vignette(), 0, 0);
-      ambient(c, layer, t);
-    }
-    const frame = fx ? fx.frames[Math.min(view.fight.i, fx.frames.length - 1)] : null;
-    const team = s.dive ? s.dive.team : null;
-    const lt = view.lungeT > t ? 3 : 0, lf = view.lungeF > t ? 3 : 0;
-    // 敌人
-    const enc = s.dive && s.dive.enc;
-    const eid = fx ? fx.e : enc ? enc.e : null;
-    if (eid) {
-      const E = G.EmberData.ENEMIES[eid];
-      const hps = frame ? frame.f : enc.foes.map((f) => f.hp);
-      const br = frame ? frame.b : enc.foes.map((f) => (f.breached ? 1 : 0));
-      for (let k = hps.length - 1; k >= 0; k--) {
-        if (hps[k] <= 0) continue;
-        const flap = FLY[eid] ? Math.floor(t * 6 + k) % 2 : 0;
-        const sp = foeSpr(eid, br[k], flap);
-        const p = place(eid, k);
-        const y = p.y + (tide ? 6 : 0) + (FLY[eid] ? Math.round(Math.sin(t * 3 + k) * 1.5) : E.trait === "boss" && Math.floor(t * 1.5) % 2 ? 1 : 0);
-        c.drawImage(view.flash && view.flash["f" + k] > t ? sp.fl : sp.cv, p.x - lf, y);
-        bar(c, p.x + 1, y - 4, sp.w - 2, hps[k] / (E.hp || 1), PAL.blood);
-      }
-    }
-    // 主角：外观跟着行装走
-    {
-      const id = fx ? fx.wear : team[0].id, sp = teamSpr(id);
-      const hp = frame ? frame.t[0] : team[0].hp, max = fx ? fx.max[0] : team[0].max;
-      const bob = view.walk > 0 ? -(Math.floor(t * 8) & 1) : Math.floor(t * 1.5) % 2;
-      const x = HX + lt, y = ground - sp.h + bob;
-      if (hp <= 0) {
-        // 倒下：一小堆影子和一盏还亮着的灯
-        c.fillStyle = PAL.coal;
-        c.fillRect(HX + 1, ground - 4, sp.w - 2, 4);
-        c.fillStyle = PAL.rust;
-        c.fillRect(HX + 2, ground - 3, sp.w - 5, 2);
-        c.fillStyle = PAL.ember;
-        c.fillRect(HX + sp.w - 3, ground - 3, 1, 1);
-      } else {
-        c.drawImage(view.flash && view.flash.t0 > t ? sp.fl : sp.cv, x, y);
-        bar(c, HX + 1, y - 4, sp.w - 2, hp / max, PAL.blood);
-      }
-    }
-    // 战斗表现：行装的出手方式和带着的技艺都画出来
-    if (fx && eid) {
-      const round = view.fight.i, sk = fx.skills || [], hy = ground - 10;
-      const alive = frame.f.map((v, k) => (v > 0 ? k : -1)).filter((k) => k >= 0);
-      const tx = alive.length ? place(eid, alive[0]).x : W - 30;
-      if (sk.includes("smoke") && round <= 3) {
-        c.fillStyle = PAL.frost;
-        for (let j = 0; j < 16; j++) for (let i2 = (j + Math.floor(t * 4)) & 1; i2 < 26; i2 += 2) if ((i2 - 13) * (i2 - 13) + (j - 8) * (j - 8) * 2 < 150) c.fillRect(HX - 6 + i2, ground - 20 + j, 1, 1);
-      }
-      if (sk.includes("brand")) {
-        c.fillStyle = Math.floor(t * 8) % 2 ? PAL.ember : PAL.emberHi;
-        for (const k of alive) {
-          const p = place(eid, k);
-          c.fillRect(p.x + 3 + ((k * 3) % 5), p.y - 1 + (Math.floor(t * 8 + k) % 2), 1, 2);
+    const bg = caveBG(1, false);
+    if (farImg) c.drawImage(farBG(1), 0, 0);
+    c.drawImage(bg, 0, 0);
+    c.drawImage(vignette(), 0, 0);
+    ambient(c, 1, t);
+    const f = r.fight, D = G.EmberData;
+    const bob = (i) => Math.floor(t * 1.5 + i * 0.7) % 2;
+    // 路上的机关
+    const has = (k) => r.items.find((x) => x.t === "u" && x.k === k);
+    if (has("snare") && (!f || f.snare > 0)) stand(c, allySpr("snare"), G.EmberSim.SNARE_X, 0);
+    if (has("lamp")) stand(c, allySpr("lamp"), HX + 12, 0);
+    // 倾炉留下的火
+    if (f && f.fire > 0) {
+      for (let x = HX + 10; x < HX + 110; x++) {
+        const hh = 2 + Math.floor(hash(x * 3 + Math.floor(t * 12)) * 5);
+        for (let y = 0; y < hh; y++) if ((x + y) % 2 === 0) {
+          c.fillStyle = y < 2 ? PAL.emberHi : PAL.ember;
+          c.fillRect(x, GROUND - 1 - y, 1, 1);
         }
       }
-      if (lt) {
-        if (fx.wear === "hunter") {
-          // 长枪突刺：一条直线扎到最前面的敌人
-          c.fillStyle = PAL.snow;
-          c.fillRect(HX + 14, hy, Math.max(4, tx - HX - 14), 1);
-          c.fillStyle = PAL.hunter;
-          c.fillRect(tx - 2, hy - 1, 3, 3);
-        } else if (fx.wear === "guard") {
-          // 盾击：身前一道弧
-          c.fillStyle = PAL.guard;
-          for (let j = -6; j <= 6; j++) c.fillRect(HX + 18 + Math.round(3 - (j * j) / 12), hy + j, 2, 1);
-        } else if (!fx.plating) {
-          // 炉罐喷火：一片抖动的火舌扫过去
-          for (let i2 = 0; i2 < W - HX - 34; i2++) {
-            const hh = 2 + Math.round((i2 / (W - HX - 34)) * 5);
-            for (let j = -hh; j <= hh; j++) if ((i2 + j + Math.floor(t * 20)) % 2 === 0) {
-              c.fillStyle = Math.abs(j) < hh / 2 ? PAL.emberHi : i2 % 3 ? PAL.ember : PAL.hearth;
-              c.fillRect(HX + 16 + i2, hy + j, 1, 1);
-            }
+    }
+    if (f) {
+      // 敌人在后，自己人在前
+      f.ents.forEach((e, i) => {
+        if (e.side !== 1 || e.hp <= 0) return;
+        const sp = foeSpr(e.k, 0, 0);
+        c.drawImage(view.flash[i] > t ? sp.fl : sp.cv, Math.round(e.x), GROUND - sp.h - (i % 3) * 2 + (e.stun > 0 ? 0 : bob(i)));
+        if (D.ENEMIES[e.k].big) bar(c, Math.round(e.x) + 1, GROUND - sp.h - 5 - (i % 3) * 2, sp.w - 2, e.hp / e.max, PAL.blood);
+      });
+      f.ents.forEach((e, i) => {
+        if (e.side !== 0 || e.hp <= 0) return;
+        const sp = e.hero ? teamSpr(e.k) : allySpr(e.k);
+        stand(c, sp, e.x, (i % 2) * 2 + bob(i), view.flash[i] > t);
+        if (e.hero || e.hp < e.max) bar(c, Math.round(e.x - sp.w / 2) + 1, GROUND - sp.h - 4, sp.w - 2, e.hp / e.max, e.hero ? PAL.blood : PAL.wei);
+      });
+    } else {
+      // 两波之间：队伍站在原地
+      stand(c, teamSpr(r.wear), HX, bob(0));
+      let nf = 0, nb = 0;
+      for (const it of r.items) {
+        if (it.t !== "u" || D.UNITS[it.k].line === "fix") continue;
+        stand(c, allySpr(it.k), D.UNITS[it.k].line === "front" ? 74 - 9 * nf++ : 40 - 7 * nb++, bob(nf + nb));
+      }
+    }
+    // 出手的效果
+    for (const e of view.fx) {
+      const age = t - e.t0;
+      if (age < 0 || age > 0.25) continue;
+      if (e.k === "shot") {
+        c.fillStyle = PAL.snow;
+        c.fillRect(HX + 6, GROUND - 10, Math.max(2, Math.round(e.x - HX - 4)), 1);
+        c.fillStyle = PAL.hunter;
+        c.fillRect(Math.round(e.x), GROUND - 11, 3, 3);
+      } else if (e.k === "flame") {
+        const R0 = D.OUTFITS.stoker.range;
+        for (let i = 0; i < R0 - 8; i++) {
+          const hh = 1 + Math.round((i / R0) * 6);
+          for (let j = -hh; j <= hh; j++) if ((i + j + Math.floor(t * 30)) % 2 === 0) {
+            c.fillStyle = Math.abs(j) < hh / 2 ? PAL.emberHi : i % 3 ? PAL.ember : PAL.hearth;
+            c.fillRect(HX + 8 + i, GROUND - 9 + j, 1, 1);
           }
         }
-        if (sk.includes("spear") && round % 2 === 0) {
-          c.fillStyle = PAL.snow;
-          for (let i2 = 0; i2 < tx - HX - 12; i2 += 2) c.fillRect(HX + 12 + i2, hy - 8 + Math.round((i2 / Math.max(1, tx - HX - 12)) * 8), 2, 1);
-        }
-        if (sk.includes("quake") && round % 3 === 0) {
-          c.fillStyle = PAL.snow;
-          for (let i2 = 0; i2 < W - HX - 20; i2 += 6) c.fillRect(HX + 16 + i2, ground + 1 - ((i2 / 6) % 2), 4, 1);
-        }
-      }
-      if (fx.wear === "guard" && lf) {
-        // 架盾挡下攻击：盾面闪一下
+      } else if (e.k === "bolt") {
         c.fillStyle = PAL.snow;
-        c.fillRect(HX + 15, hy - 5, 1, 10);
+        const x = e.x0 + (e.x - e.x0) * Math.min(1, age / 0.12);
+        c.fillRect(Math.round(x), GROUND - 8, 4, 1);
+      } else if (e.k === "lob" || e.k === "jav") {
+        const k = Math.min(1, age / 0.22), x0 = e.k === "jav" ? HX : e.x0, x = x0 + (e.x - x0) * k, y = GROUND - 8 - Math.sin(k * Math.PI) * (e.k === "jav" ? 14 : 22);
+        c.fillStyle = e.k === "jav" ? PAL.snow : PAL.ember;
+        c.fillRect(Math.round(x), Math.round(y), e.k === "jav" ? 5 : 2, e.k === "jav" ? 1 : 2);
+      } else if (e.k === "die") {
+        c.fillStyle = e.side ? PAL.foe : PAL.frost;
+        for (let i = 0; i < 6; i++) c.fillRect(Math.round(e.x + 4 + Math.cos(i * 1.05) * age * 40), Math.round(GROUND - 6 + Math.sin(i * 1.05) * age * 30), 1, 1);
+      } else if (e.k === "heal") {
+        c.fillStyle = PAL.wei;
+        c.fillRect(Math.round(e.x) - 1, Math.round(GROUND - 22 - age * 20), 3, 1);
+        c.fillRect(Math.round(e.x), Math.round(GROUND - 23 - age * 20), 1, 3);
+      } else if (e.k === "snare") {
+        c.fillStyle = PAL.snow;
+        c.fillRect(Math.round(e.x) - 2, GROUND - 2, 10, 1);
       }
     }
-    if (s.dive && s.dive.event === "rescue") {
-      const sp = teamSpr("wei");
-      c.fillStyle = BANDS[1][2];
-      for (let j = 0; j < 7; j++) for (let i2 = j & 1; i2 < 20; i2 += 2) c.fillRect(120 + i2, FLOOR - 4 + j, 1, 1);
-      c.drawImage(sp.cv, 124, FLOOR + 3 - sp.h);
+    // 大招：猎核装是一道贯穿全屏的亮线
+    if (view.ultT > t && view.ultWear === "hunter") {
+      c.fillStyle = PAL.emberHi;
+      c.fillRect(HX + 6, GROUND - 11, W, 3);
+      c.fillStyle = PAL.snow;
+      c.fillRect(HX + 6, GROUND - 10, W, 1);
     }
-    // 飘字
-    if (view.floats)
-      for (const f of view.floats) {
-        const age = t - f.t0;
-        if (age < 0 || age > 0.8) continue;
-        num(c, f.s, Math.round(f.x), Math.round(f.y - age * 14), f.c);
-      }
+    // 伤害数字：只显示大的，免得满屏都是
+    for (const fl of view.floats) {
+      const age = t - fl.t0;
+      if (age < 0 || age > 0.7) continue;
+      num(c, fl.s, Math.round(fl.x), Math.round(fl.y - age * 16), fl.c);
+    }
     c.restore();
   }
-  /* 战斗回放中各单位的屏幕位置，给飘字用。 */
-  function slot(kind, i, n, eid) {
-    if (kind === "t") return { x: HX + 3, y: FLOOR - 26 };
-    const p = place(eid, i);
-    return { x: p.x + 4, y: p.y - 10 };
-  }
 
-  G.EmberPixel = { W, H, PAL, draw, iconURL, slot };
+  G.EmberPixel = { W, H, PAL, draw, iconURL, glyphURL };
 })(typeof globalThis !== "undefined" ? globalThis : window);

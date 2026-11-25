@@ -1,355 +1,136 @@
-/* 万丈深渊：无界面回归与平衡测试。
+/* 万丈深渊：无界面回归与节奏测试（v4 切片：拨盘、合并、实时波次）。
    node tests/ember-sim.js           快速门禁
-   node tests/ember-sim.js --report  打印 200 个存档的通关统计、各行装的整局表现、配件的作用
-   验收线来自 ember/docs/design.md 第 6 节。 */
+   node tests/ember-sim.js --report  打印各种玩法的统计 */
 const path = require("path");
 const assert = require("assert");
 require(path.join(__dirname, "../ember/data.js"));
 require(path.join(__dirname, "../ember/sim.js"));
 const D = globalThis.EmberData, S = globalThis.EmberSim;
 const report = process.argv.includes("--report");
-const hpFrac = (d) => Math.max(0, d.team[0].hp) / d.team[0].max;
-const stats = { enc: 0, sure: 0, retreat: 0 };
+const DT = 1 / 30;
 
-/* 按敌情挑战术：大型单体破甲、架盾、投射；成群不破甲、反击、压制；能核不够时用装甲。 */
-function pickTactic(s) {
-  const d = s.dive, E = D.ENEMIES[d.enc.e], many = d.enc.foes.length > 2;
-  S.setTactic(s, "breach", E.hp >= 40);
-  S.setTactic(s, "stance", E.trait === "boss" || E.hp >= 40 ? "cover" : "counter");
-  S.setTactic(s, "mode", d.carry.core < 4 ? "plating" : many ? "blanket" : "lance");
-}
-
-/* 一个朴素但会看预估的玩家。 */
-function diveOnce(s) {
-  S.startDive(s, s.route + 1);
+/* 打一局。extra：每波在免费那一次之外再加拉几次（能核够的话）。返回这一局的结果和每波用时。 */
+function playRun(s, extra) {
+  S.startRun(s);
+  const times = [];
   let guard = 0;
-  while (s.dive && guard++ < 300) {
-    const d = s.dive;
-    if (d.event === "rescue") {
-      S.rescue(s, true);
-      continue;
-    }
-    if (d.enc) {
-      pickTactic(s);
-      // 背着备用行装时：两套都推演一遍，明显更好就换（换装要 1 氧气）
-      if (S.canSwap(s)) {
-        const a = S.forecast(s), b = S.forecastSwap(s);
-        if (b.win > a.win || (b.win === a.win && b.cost + b.o2 * 0.03 < a.cost + a.o2 * 0.03 - 0.02)) {
-          S.swapOutfit(s);
-          stats.swaps = (stats.swaps || 0) + 1;
-          pickTactic(s);
-        }
+  while (s.run && guard++ < 400) {
+    const r = s.run;
+    S.spin(s);
+    for (let i = 0; i < extra; i++) if (r.cores >= S.spinCost(s) + 6) S.spin(s);
+    assert(S.beginWave(s), "wave must start after a spin");
+    let n = 0;
+    while (s.run && s.run.phase === "fight" && n++ < 30 * 180) {
+      S.step(s, DT);
+      if (s.run && s.run.fight) {
+        assert(Number.isFinite(s.run.fight.ents[0].hp), "hp finite");
+        s.run.fight.ev.length = 0;
       }
-      const fc = S.forecast(s);
-      stats.enc++;
-      if (fc.win === fc.n && fc.cost < 0.1) stats.sure++;
-      if (fc.win >= 4 || (d.enc.boss && fc.win >= 3)) S.act(s, "fight");
-      else if (S.canDetour(s) && d.o2 > S.returnCost(s) + 3) S.act(s, "detour");
-      else {
-        stats.retreat++;
-        S.act(s, "retreat");
-      }
-      continue;
     }
-    if (S.tooHeavy(s)) S.dropToCap(s);
-    if (d.atEnd) {
-      if (S.canDescend(s) && hpFrac(d) > 0.6 && d.o2 > S.returnCost(s) + 10) S.descend(s);
-      else S.goHome(s);
-      continue;
-    }
-    const next = S.stepCost(s, d.layer);
-    if (d.o2 - next < S.returnCost(s) + 2 || hpFrac(d) < 0.35) {
-      S.goHome(s);
-      break;
-    }
-    const opts = S.options(s);
-    // 血多时找架打（能核和配件都靠打），血少时挑安全的节点
-    const want = hpFrac(d) > 0.55 ? (n) => n.t === "fight" : (n) => n.t !== "fight" && n.t !== "unknown";
-    let i = opts.findIndex(want);
-    if (i < 0) i = opts.findIndex((n) => n.t !== "unknown");
-    if (i < 0) i = 0;
-    S.moveTo(s, i);
+    assert(!s.run || s.run.phase !== "fight", "a wave must end within 3 minutes");
+    times.push(n / 30);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(s)), s, "state must survive JSON round-trip");
   }
-  assert(!s.dive, "dive must end");
+  return { last: s.last, times };
 }
 
-/* 配件对某套行装值多少：通用词条按固定分，专属词条只有穿对行装才算。 */
-function itemScore(it, wear) {
-  const W = { atk: 1, hp: 0.8, arm: 5, o2: 2.5, cap: 0.6, big: 0.5, loot: 0.5, regen: 1.2, crit: 0.8, hunt: wear === "hunter" ? 1 : 0, stoke: wear === "stoker" ? 1 : 0, fuel: wear === "stoker" ? 0.2 : 0, counter: wear === "guard" ? 0.3 : 0, block: wear === "guard" ? 1.2 : 0 };
-  return it.a.reduce((a, [k, v]) => a + (W[k] || 0) * v, 0);
-}
-/* opt.wear 固定行装；opt.noItems 不装配件；opt.noSkills 不带技艺。 */
-function manage(s, opt) {
-  opt = opt || {};
-  while (S.repair(s));
-  for (const id of ["hunter", "guard", "stoker"]) S.promote(s, id);
-  if (opt.wear) S.wear(s, opt.wear);
-  S.setSpare(s, opt.spare && opt.spare !== s.wear ? opt.spare : null);
-  for (const id of s.equip.slice()) S.unequip(s, id);
-  const score = opt.generic ? (it) => itemScore(it, "none") : (it) => itemScore(it, s.wear);
-  if (!opt.noItems) for (const it of s.items.slice().sort((a, b) => score(b) - score(a))) S.equip(s, it.id); // 同名的装不上，自然跳过
-  if (s.items.length > 8) for (const it of s.items.filter((x) => !s.equip.includes(x.id)).sort((a, b) => a.r - b.r).slice(0, s.items.length - 8)) S.salvage(s, it.id);
-  if (!opt.noSkills) for (const k of s.skills) if (!s.slots.includes(k)) S.toggleSkill(s, k);
-  if (s.hearth <= 2) S.stoke(s);
-  for (const k of ["tank", "frame", "armor"]) S.build(s, k);
-  // 升级：主行装优先，备用的落后两级以上才补
-  if (s.store.core > 40) {
-    const main = opt.wear || s.wear;
-    if (s.spare && s.outfits[s.spare].lv < s.outfits[main].lv - 1) S.upgrade(s, s.spare);
-    else S.upgrade(s, main);
-  }
-  while (s.hearth < 5 && s.store.core > 30 && S.stoke(s));
+/* 1. 确定性 */
+{
+  const a = S.newGame(7), b = S.newGame(7);
+  playRun(a, 1);
+  playRun(b, 1);
+  assert.deepStrictEqual(a, b, "same seed, same run");
 }
 
-function playThrough(seed, maxDives, opt) {
-  const s = S.newGame(seed, 0);
-  let dives = 0, waves = 0, lostWaves = 0;
-  manage(s, opt);
-  while (!s.won && dives < maxDives) {
-    if (s.tide) {
-      manage(s, opt);
-      if (s.store.core < 20 && waves > 0) {
-        diveOnce(s);
-        dives++;
-        manage(s, opt);
-      }
-      waves++;
-      if (!S.tideWave(s)) lostWaves++;
-      delete s.fx;
-      continue;
+/* 2. 拨盘和合并 */
+{
+  const s = S.newGame(3);
+  S.startRun(s);
+  assert.strictEqual(S.spinCost(s), 0, "first spin of a wave is free");
+  const reel = S.spin(s);
+  assert(reel.length === 3 && reel.every((x) => ["new", "up", "core"].includes(x.got)));
+  assert.strictEqual(S.spinCost(s), D.SPIN_COST, "second spin costs");
+  assert.strictEqual(S.spin(s), null, "cannot spin without cores");
+}
+{
+  // 直接验证 gain 的效果：反复拉到同名，星级封顶三星
+  const s = S.newGame(11);
+  S.startRun(s);
+  s.run.cores = 9999;
+  for (let i = 0; i < 60; i++) S.spin(s), (s.run.spins = 0);
+  const r = s.run;
+  assert(r.items.every((x) => x.star >= 1 && x.star <= 3), "stars stay within 1..3");
+  assert(r.items.filter((x) => x.t === "s").length <= D.SKILL_SLOTS, "skill slots capped");
+  assert(r.items.filter((x) => x.t !== "s").length <= D.BAG, "bag capped");
+  assert(new Set(r.items.map((x) => x.t + x.k)).size === r.items.length, "no duplicate entries, duplicates merge");
+}
+
+/* 3. 回家全带回，倒下带一半 */
+{
+  const s = S.newGame(5);
+  S.startRun(s);
+  s.run.cores = 30;
+  assert(S.goHome(s) && s.bank === 30 && s.last.how === "home");
+  S.startRun(s);
+  S.spin(s);
+  s.run.cores = 31;
+  s.run.hp = 1;
+  s.run.items = [];
+  s.run.wave = 9;
+  S.beginWave(s);
+  let n = 0;
+  while (s.run && n++ < 30 * 120) S.step(s, DT);
+  assert(s.last.how === "dead" && s.bank === 30 + 15, "death keeps half: " + s.bank);
+}
+
+/* 4. 行装各有所长：同一队帮手，打一群冻鼠御炉装更快，打首领猎核装更快 */
+function clearTime(wear, waveIdx) {
+  const s = S.newGame(21);
+  s.wear = wear;
+  S.startRun(s);
+  S.spin(s);
+  s.run.items = [{ t: "u", k: "shield", star: 2 }, { t: "u", k: "spear", star: 2 }];
+  s.run.wave = waveIdx;
+  s.run.hp = 9999;
+  S.beginWave(s);
+  s.run.fight.ents[0].hp = s.run.fight.ents[0].max = 9999;
+  let n = 0;
+  while (s.run && s.run.phase === "fight" && n++ < 30 * 300) S.step(s, DT), s.run && s.run.fight && (s.run.fight.ev.length = 0);
+  return n / 30;
+}
+{
+  const t = { ratH: clearTime("hunter", 5), ratS: clearTime("stoker", 5), bossH: clearTime("hunter", 9), bossS: clearTime("stoker", 9) };
+  if (report) console.log("清场用时（秒）", JSON.stringify(t));
+  assert(t.ratS < t.ratH * 0.8, "stoker clears a rat swarm clearly faster");
+  assert(t.bossH < t.bossS * 0.8, "hunter kills the boss clearly faster");
+}
+
+/* 5. 整体节奏：新手头几局打不穿，升几级、多拉几次之后能打穿；一波 8 到 20 秒 */
+{
+  const N = report ? 60 : 20;
+  const firstWave = [], clearedAt = [], waveTimes = [];
+  for (let i = 1; i <= N; i++) {
+    const s = S.newGame(1000 + i);
+    let cleared = 0;
+    for (let run = 1; run <= 25 && !cleared; run++) {
+      const res = playRun(s, 1);
+      if (run === 1) firstWave.push(res.last.wave);
+      waveTimes.push(...res.times);
+      if (res.last.how === "won") cleared = run;
+      while (S.upgrade(s));
     }
-    diveOnce(s);
-    delete s.fx;
-    manage(s, opt);
-    dives++;
-    const copy = JSON.parse(JSON.stringify(s));
-    assert.deepStrictEqual(copy, s, "state must survive JSON round-trip");
+    clearedAt.push(cleared || 99);
   }
-  return { s, dives, waves, lostWaves };
-}
-/* 默认的「会玩的玩家」：猎核装为主，背一套御炉装对付成群的敌人。 */
-const GOOD = { wear: "hunter", spare: "stoker" };
-function batch(n, opt) {
-  opt = opt || GOOD;
-  const res = [];
-  for (let i = 1; i <= n; i++) res.push(playThrough(1000 + i, 120, opt));
-  const ds = res.map((r) => (r.s.won ? r.dives : 999)).sort((a, b) => a - b);
-  return { res, med: ds[ds.length >> 1], won: res.filter((r) => r.s.won).length };
-}
-
-/* 1. 确定性：同种子同结果 */
-{
-  const a = playThrough(7, 120, GOOD), b = playThrough(7, 120, GOOD);
-  assert.deepStrictEqual(a.s, b.s, "same seed, same game");
-}
-
-/* 2. 回程氧气：越深越贵（打完据点下到下一层也不会变便宜），锚点减半 */
-{
-  const s = S.newGame(1, 0);
-  S.startDive(s, 1);
-  s.dive.step = 4;
-  const c1 = S.returnCost(s);
-  s.dive.layer = 2;
-  s.dive.step = 0;
-  const c2 = S.returnCost(s);
-  s.dive.step = 5;
-  const c2b = S.returnCost(s);
-  s.dive.layer = 3;
-  s.dive.step = 0;
-  const c3 = S.returnCost(s);
-  assert(c2 > c1 && c3 > c2b, "return cost never drops when going deeper: " + [c1, c2, c2b, c3]);
-  s.dive.layer = 2;
-  s.dive.step = 3;
-  const before = S.returnCost(s);
-  s.dive.anchor = true;
-  assert(S.returnCost(s) < before, "anchor halves layer-2 return");
-}
-
-/* 3. 据点后停下，由玩家选择下一层或归返 */
-{
-  const s = S.newGame(2, 0);
-  s.cleared[1] = true;
-  S.startDive(s, 1);
-  s.dive.step = s.dive.map.length;
-  s.dive.atEnd = true;
-  assert(S.canDescend(s));
-  S.descend(s);
-  assert.strictEqual(s.dive.layer, 2);
-}
-
-/* 4. 救援：只出现一次，救人丢一半能核；不救则路标要之后的下潜走到第 3 步才找到。首领首次击倒必掉技艺和配件 */
-{
-  const s = S.newGame(3, 0);
-  S.startDive(s, 1);
-  for (let i = 0; i < 3; i++) s.dive.map[i] = [{ t: "cache" }];
-  S.moveTo(s, 0);
-  S.moveTo(s, 0);
-  const before = s.dive.carry.core;
-  S.moveTo(s, 0);
-  assert.strictEqual(s.dive.event, "rescue");
-  S.rescue(s, true);
-  assert(s.flags.wei && s.dive.carry.core < before + 5, "rescue costs cores");
-
-  const t = S.newGame(4, 0);
-  t.flags.metWei = true;
-  S.startDive(t, 1);
-  t.dive.map[0] = [{ t: "boss", e: "hyenaMatron" }];
-  t.dive.team[0].hp = t.dive.team[0].max = 9999;
-  S.moveTo(t, 0);
-  S.act(t, "fight");
-  S.goHome(t);
-  assert(!S.routeUnlocked(t), "sign not found on the same dive");
-  assert(t.skills.includes("spear") && t.items.length >= 1, "first boss kill brings home a skill and an item");
-  // 首杀后没带回去就倒下：技艺不能永久丢，下次再打还掉
-  const u = S.newGame(6, 0);
-  u.flags.metWei = true;
-  S.startDive(u, 1);
-  u.dive.map[0] = [{ t: "boss", e: "hyenaMatron" }];
-  u.dive.team[0].hp = u.dive.team[0].max = 9999;
-  S.moveTo(u, 0);
-  S.act(u, "fight");
-  assert(u.dive.carry.skills.includes("spear"));
-  u.dive.team[0].hp = 1;
-  u.dive.enc = { e: "fumeTyrant", foes: [{ hp: 520, max: 520 }], boss: true };
-  S.act(u, "fight");
-  assert(u.last.how === "wiped" && !u.skills.includes("spear"));
-  S.startDive(u, 1);
-  u.dive.map[0] = [{ t: "boss", e: "hyenaMatron" }];
-  u.dive.team[0].hp = u.dive.team[0].max = 9999;
-  S.moveTo(u, 0);
-  S.act(u, "fight");
-  S.goHome(u);
-  assert(u.skills.includes("spear"), "boss skill drops again if it was lost");
-  S.startDive(t, 1);
-  for (let i = 0; i < 3; i++) t.dive.map[i] = [{ t: "cache" }];
-  S.moveTo(t, 0);
-  S.moveTo(t, 0);
-  assert(!S.routeUnlocked(t), "sign is deep in the layer, not at the entrance");
-  S.moveTo(t, 0);
-  assert(S.routeUnlocked(t), "sign found one dive later, at step 3");
-}
-
-/* 5. 拟岩虫与据点不能绕行 */
-{
-  const s = S.newGame(5, 0);
-  S.startDive(s, 1);
-  s.dive.map[0] = [{ t: "fight", e: "mimicWorm", hidden: true }];
-  assert.strictEqual(S.options(s)[0].t, "cache", "mimic looks like a cache");
-  S.moveTo(s, 0);
-  assert(!S.canDetour(s), "cannot detour a revealed mimic");
-}
-
-/* 6. 关键进阶需要真实材料 */
-{
-  const s = S.newGame(9, 0);
-  s.store.core = 9999;
-  assert(!S.promote(s, "guard") && !S.promote(s, "hunter") && !S.promote(s, "stoker"));
-  s.store.mats = { plateBone: 2, frostSinew: 2 };
-  assert(S.promote(s, "guard"));
-}
-
-/* 7. 超重：超过上限 25% 走不动，丢到上限后能走；配件也占负重 */
-{
-  const s = S.newGame(10, 0);
-  S.startDive(s, 1);
-  const w0 = S.weight(s);
-  s.dive.carry.items.push(S.rollItem(s, 1, false));
-  assert.strictEqual(S.weight(s), w0 + D.ITEM_W);
-  s.dive.carry.core = 40;
-  assert(S.tooHeavy(s));
-  assert.throws(() => S.moveTo(s, 0));
-  S.dropToCap(s);
-  assert(!S.tooHeavy(s));
-}
-
-/* 8. 常规队伍：按经过时间产出，8 小时封顶 */
-{
-  const s = S.newGame(11, 0);
-  s.route = 1;
-  const c0 = s.store.core;
-  S.idleTick(s, 60 * 60 * 1000);
-  assert.strictEqual(s.store.core - c0, 30, "0.5 per minute for an hour");
-  S.idleTick(s, 60 * 60 * 1000 + 48 * 3600 * 1000);
-  assert.strictEqual(s.store.core - c0, 30 + 240, "capped at 8 hours");
-}
-
-/* 9. 行装、配件、技艺的规则 */
-{
-  const s = S.newGame(12, 0);
-  const base = S.heroStats(s);
-  for (let i = 0; i < 5; i++) s.items.push(S.rollItem(s, 1, false));
-  s.items = [{ id: 900, b: "blade", r: 0, a: [["atk", 10]] }, { id: 901, b: "filter", r: 0, a: [["o2", 4]] }, { id: 902, b: "blade", r: 1, a: [["atk", 14], ["hp", 7]] }, { id: 903, b: "felt", r: 0, a: [["hp", 12]] }, { id: 904, b: "awl", r: 0, a: [["hunt", 25]] }];
-  assert(S.equip(s, 900) && S.equip(s, 901));
-  assert(!S.equip(s, 902) && S.equipClash(s, 902), "two items of the same name cannot both be equipped");
-  assert(S.equip(s, 903) && !S.equip(s, 904), "only 3 equip slots");
-  const now = S.heroStats(s);
-  assert(now.atk > base.atk * 1.09 && now.o2 === base.o2 + 4 && now.hp > base.hp, "items change stats");
-  S.wear(s, "guard");
-  assert(S.heroStats(s).hp > now.hp, "guard outfit has more hp");
-  const cores = s.store.core;
-  assert(S.salvage(s, 900) && s.store.core > cores && !s.equip.includes(900), "salvage gives cores and unequips");
-  s.skills = ["spear", "smoke", "aid"];
-  assert(S.toggleSkill(s, "spear") && S.toggleSkill(s, "smoke") && !S.toggleSkill(s, "aid"), "only 2 skill slots");
-  S.startDive(s, 1);
-  assert(!S.wear(s, "hunter") && !S.equip(s, s.items[1].id), "no changing outfit or items during a dive");
-  // 倒下：背着的配件全丢
-  s.dive.carry.items.push(S.rollItem(s, 1, false));
-  const n = s.items.length;
-  s.dive.map[0] = [{ t: "boss", e: "fumeTyrant" }];
-  S.moveTo(s, 0);
-  S.act(s, "fight");
-  assert.strictEqual(s.last.how, "wiped");
-  assert.strictEqual(s.items.length, n, "carried items are lost on a wipe");
-}
-
-/* 10. 行装要有取舍：同一场战斗，换一套行装，结果明显不同 */
-function spread(enemy, n, wearId, carry) {
-  const s = S.newGame(21, 0);
-  for (const id in s.outfits) s.outfits[id] = { lv: 8, adv: true };
-  s.gear.armor = 1;
-  S.wear(s, wearId);
-  S.startDive(s, 1);
-  s.dive.carry.core = carry;
-  s.dive.map[0] = [{ t: "fight", e: enemy, n }];
-  S.moveTo(s, 0);
-  pickTactic(s);
-  const f = S.forecast(s);
-  return f.win * 100 - Math.round(f.cost * 100);
-}
-{
-  const r = {};
-  for (const w of ["hunter", "guard", "stoker"]) r[w] = { big: spread("wellWarden", 1, w, 12), swarm: spread("chorusBat", 6, w, 12) };
-  if (report) console.log("单场得分（胜场×100 减损失%）：守兽 / 六只群鸣蝠", JSON.stringify(r));
-  assert(r.stoker.swarm > r.hunter.swarm, "stoker outfit is better against swarms than hunter");
-  assert(r.hunter.big > r.stoker.big || r.guard.big > r.stoker.big, "single big foe favours hunter or guard over stoker");
-}
-
-/* 11. 整体节奏：会看预估的朴素策略能通关；下潜次数 14 到 30；相当一部分战斗要付出代价；配件和技艺确实有用 */
-{
-  const N = report ? 200 : 40;
-  const all = batch(N);
-  const ds = all.res.filter((r) => r.s.won).map((r) => r.dives).sort((a, b) => a - b);
-  const lost = all.res.reduce((a, r) => a + r.lostWaves, 0), waves = all.res.reduce((a, r) => a + r.waves, 0);
-  const sure = stats.sure / stats.enc;
-  const items = all.res.reduce((a, r) => a + r.s.items.length, 0) / N, skills = all.res.reduce((a, r) => a + r.s.skills.length, 0) / N;
+  const med = (a) => a.slice().sort((x, y) => x - y)[a.length >> 1];
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   if (report) {
-    console.log("通关率", all.won + "/" + N, "下潜次数 中位", all.med, "最少", ds[0], "最多", ds[ds.length - 1]);
-    console.log("几乎不掉血（损失 <10%）的稳赢局比例", (sure * 100).toFixed(0) + "%", "撤退", stats.retreat, "/", stats.enc);
-    console.log("兽潮 失守", lost, "/", waves, "波；通关时平均配件", items.toFixed(1), "件，技艺", skills.toFixed(1), "个");
-    const M = 60;
-    for (const [name, opt] of [["只穿猎核装", { wear: "hunter" }], ["只穿护卫装", { wear: "guard" }], ["只穿御炉装", { wear: "stoker" }], ["猎核装 + 备用御炉装", { wear: "hunter", spare: "stoker" }], ["猎核装 + 备用护卫装", { wear: "hunter", spare: "guard" }], ["护卫装 + 备用御炉装", { wear: "guard", spare: "stoker" }], ["猎核装只装通用配件", { wear: "hunter", generic: true }], ["御炉装只装通用配件", { wear: "stoker", generic: true }], ["不装配件", Object.assign({ noItems: true }, GOOD)], ["不带技艺", Object.assign({ noSkills: true }, GOOD)], ["配件技艺都不用", Object.assign({ noItems: true, noSkills: true }, GOOD)]]) {
-      const b = batch(M, opt);
-      console.log(name, "通关", b.won + "/" + M, "中位", b.med);
-    }
+    console.log("第一局打到第几波 中位", med(firstWave), "最好", Math.max(...firstWave), "最差", Math.min(...firstWave));
+    console.log("第几局第一次打穿十波 中位", med(clearedAt), "分布", clearedAt.slice().sort((a, b) => a - b).join(","));
+    console.log("一波平均用时", avg(waveTimes).toFixed(1), "秒；最长", Math.max(...waveTimes).toFixed(1));
   }
-  assert(all.won / N >= 0.85, "policy should usually finish: " + all.won + "/" + N);
-  assert(all.med >= 14 && all.med <= 30, "median dives in design range, got " + all.med);
-  assert(sure <= 0.7, "a fair share of fights must cost something even for a good player, got " + sure.toFixed(2));
-  const K = report ? 60 : 20;
-  const bare = batch(K, Object.assign({ noItems: true, noSkills: true }, GOOD)), geared = batch(K);
-  assert(bare.med > geared.med, "items and skills must speed up a run: bare " + bare.med + " vs geared " + geared.med);
-  const solo = Math.min(batch(K, { wear: "hunter" }).med, batch(K, { wear: "guard" }).med, batch(K, { wear: "stoker" }).med);
-  assert(geared.med < solo, "carrying a spare outfit and swapping must beat any single outfit: " + geared.med + " vs " + solo);
+  assert(med(firstWave) >= 3 && med(firstWave) <= 9, "first run should reach mid-layer, got " + med(firstWave));
+  assert(med(clearedAt) >= 3 && med(clearedAt) <= 12, "first clear should take a handful of runs, got " + med(clearedAt));
+  assert(avg(waveTimes) >= 6 && avg(waveTimes) <= 20, "average wave length, got " + avg(waveTimes).toFixed(1));
 }
 
 console.log("ember-sim: ok");
